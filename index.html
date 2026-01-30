@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Secure Memo Transfer</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        /* LINE風 UIデザイン */
+        :root {
+            --bg-color: #7289DA; /* ディスコードとLINEの中間のような色 */
+            --chat-bg: #85a0e6;
+            --msg-bg-me: #8de055;
+            --text-color: #333;
+        }
+        body { margin: 0; font-family: sans-serif; background-color: var(--chat-bg); height: 100vh; display: flex; flex-direction: column; }
+        
+        /* ヘッダー */
+        header { background-color: #5d72a8; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { margin: 0; font-size: 18px; }
+        
+        /* チャットエリア */
+        #chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        
+        .message { max-width: 80%; padding: 10px 15px; border-radius: 15px; font-size: 16px; line-height: 1.4; position: relative; word-break: break-all; }
+        .message.self { align-self: flex-end; background-color: var(--msg-bg-me); color: var(--text-color); border-bottom-right-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .message img { max-width: 100%; border-radius: 10px; display: block; margin-top: 5px; cursor: pointer; }
+        
+        /* 入力エリア */
+        #input-area { background: white; padding: 10px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #ddd; }
+        #message-input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #ddd; outline: none; font-size: 16px; }
+        #file-btn, #send-btn { background: none; border: none; cursor: pointer; color: #5d72a8; }
+        #file-input { display: none; }
+
+        /* 認証・設定モーダル */
+        #auth-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 25px; border-radius: 10px; width: 90%; max-width: 350px; text-align: center; }
+        .modal-content input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
+        .modal-content button { width: 100%; padding: 12px; background: #5d72a8; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-modal">
+        <div class="modal-content">
+            <h2>セキュリティ設定</h2>
+            <p>このパスワードが暗号化キーになります。<br>忘れるとデータは復元できません。</p>
+            <input type="email" id="email" placeholder="メールアドレス（ID代わり）">
+            <input type="password" id="password" placeholder="ログインパスワード">
+            <input type="password" id="encryption-key" placeholder="データ暗号化キー（必須）">
+            <button onclick="login()">ログイン / 新規登録して開始</button>
+        </div>
+    </div>
+
+    <header>
+        <h1>My Secure Keep</h1>
+        <span class="material-icons" onclick="logout()" style="cursor:pointer;">logout</span>
+    </header>
+
+    <div id="chat-container">
+        </div>
+
+    <div id="input-area">
+        <label for="file-input" id="file-btn">
+            <span class="material-icons" style="font-size: 30px;">add_photo_alternate</span>
+        </label>
+        <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(this)">
+        
+        <input type="text" id="message-input" placeholder="メモを入力..." onkeypress="handleKeyPress(event)">
+        
+        <button id="send-btn" onclick="sendMessage()">
+            <span class="material-icons" style="font-size: 30px;">send</span>
+        </button>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
+    <script>
+        // 【重要】ここにあなたのFirebase設定を貼り付けてください
+        // Firebase Console -> Project Settings -> General -> Your apps -> Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyAST5jRP6cftYUHCb5MAtHr_H7SSht8mwA",
+            authDomain: "anzendatayuso.firebaseapp.com",
+            projectId: "anzendatayuso",
+            storageBucket: "anzendatayuso.firebasestorage.app",
+            messagingSenderId: "438096878174",
+            appId: "1:438096878174:web:0c1867708a48af90ceb2cf"
+        };
+
+        // Firebase初期化
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        let currentUser = null;
+        let secretKey = ""; // ユーザーが入力した暗号化キー
+
+        // --- 暗号化・復号化ロジック (AES) ---
+        // サーバーにはこの関数を通した「意味不明な文字列」しか保存されません
+        function encryptData(data) {
+            return CryptoJS.AES.encrypt(data, secretKey).toString();
+        }
+
+        function decryptData(ciphertext) {
+            try {
+                const bytes = CryptoJS.AES.decrypt(ciphertext, secretKey);
+                return bytes.toString(CryptoJS.enc.Utf8);
+            } catch (e) {
+                return null; // 復号失敗（キーが違うなど）
+            }
+        }
+
+        // --- ログイン処理 ---
+        function login() {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('password').value;
+            const key = document.getElementById('encryption-key').value;
+
+            if (!email || !pass || !key) {
+                alert("全ての項目を入力してください");
+                return;
+            }
+
+            secretKey = key; // メモリ上にのみ保持
+
+            auth.signInWithEmailAndPassword(email, pass)
+                .then((userCredential) => {
+                    initApp(userCredential.user);
+                })
+                .catch((error) => {
+                    // ユーザーがいなければ新規作成
+                    if (error.code === 'auth/user-not-found') {
+                        auth.createUserWithEmailAndPassword(email, pass)
+                            .then((userCredential) => {
+                                initApp(userCredential.user);
+                            });
+                    } else {
+                        alert("エラー: " + error.message);
+                    }
+                });
+        }
+
+        function initApp(user) {
+            currentUser = user;
+            document.getElementById('auth-modal').classList.add('hidden');
+            loadMessages();
+        }
+
+        function logout() {
+            auth.signOut();
+            location.reload();
+        }
+
+        // --- メッセージ送信 ---
+        function sendMessage(imageUrl = null) {
+            const input = document.getElementById('message-input');
+            const text = input.value;
+
+            if (!text && !imageUrl) return;
+
+            // データオブジェクト作成
+            const payload = {
+                text: text,
+                image: imageUrl, // 画像はBase64文字列として保存（簡易実装）
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            // JSON文字列にしてから暗号化
+            const encryptedContent = encryptData(JSON.stringify(payload));
+
+            // Firestoreに保存
+            // ユーザーごとのコレクションを作成
+            db.collection('users').doc(currentUser.uid).collection('memos').add({
+                content: encryptedContent,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            input.value = "";
+        }
+
+        // --- メッセージ読み込み ---
+        function loadMessages() {
+            db.collection('users').doc(currentUser.uid).collection('memos')
+                .orderBy('createdAt', 'asc')
+                .onSnapshot((snapshot) => {
+                    const container = document.getElementById('chat-container');
+                    container.innerHTML = ""; // クリアして再描画
+
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        if (!data.content) return;
+
+                        // 復号化
+                        const decryptedJSON = decryptData(data.content);
+                        if (!decryptedJSON) return; // 復号できないデータは無視
+
+                        const payload = JSON.parse(decryptedJSON);
+                        renderMessage(payload);
+                    });
+                    
+                    // 最新のメッセージまでスクロール
+                    container.scrollTop = container.scrollHeight;
+                });
+        }
+
+        // --- 画面表示 ---
+        function renderMessage(payload) {
+            const container = document.getElementById('chat-container');
+            const div = document.createElement('div');
+            div.className = 'message self';
+
+            let html = "";
+            if (payload.image) {
+                // 画像の長押し保存はブラウザの標準機能で動作します
+                html += `<img src="${payload.image}" alt="image">`;
+            }
+            if (payload.text) {
+                // テキスト選択・コピーはCSSで標準動作します
+                html += `<div>${escapeHtml(payload.text)}</div>`;
+            }
+            div.innerHTML = html;
+            container.appendChild(div);
+        }
+
+        // --- ユーティリティ ---
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        // 画像選択時の処理（Base64に変換して保存）
+        // ※大規模なアプリではStorageを使うべきですが、簡易化のためFirestoreに文字列保存します
+        function handleFileSelect(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    sendMessage(e.target.result); // 画像データ付きで送信
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function escapeHtml(str) {
+            if(!str) return "";
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag]));
+        }
+    </script>
+</body>
+</html>

@@ -128,19 +128,37 @@
 
             secretKey = key; // メモリ上にのみ保持
 
+            // まずログインを試みる
             auth.signInWithEmailAndPassword(email, pass)
                 .then((userCredential) => {
+                    // ログイン成功
                     initApp(userCredential.user);
                 })
                 .catch((error) => {
-                    // ユーザーがいなければ新規作成
-                    if (error.code === 'auth/user-not-found') {
+                    // 失敗した場合の処理
+                    // エラーコードが「ユーザー見つからない」や「認証情報無効（新規含む）」の場合、新規登録を試みる
+                    const errorCode = error.code;
+                    if (errorCode === 'auth/user-not-found' || 
+                        errorCode === 'auth/invalid-login-credentials' || 
+                        errorCode === 'auth/invalid-credential') {
+                        
                         auth.createUserWithEmailAndPassword(email, pass)
                             .then((userCredential) => {
+                                // 新規登録成功
                                 initApp(userCredential.user);
+                            })
+                            .catch((createError) => {
+                                // 新規登録も失敗した場合（＝すでにユーザーがいるがパスワードが違う場合など）
+                                if (createError.code === 'auth/email-already-in-use') {
+                                    alert("パスワードが間違っています。");
+                                } else if (createError.code === 'auth/weak-password') {
+                                    alert("パスワードは6文字以上にしてください。");
+                                } else {
+                                    alert("登録エラー: " + createError.message);
+                                }
                             });
                     } else {
-                        alert("エラー: " + error.message);
+                        alert("ログインエラー: " + error.message);
                     }
                 });
         }

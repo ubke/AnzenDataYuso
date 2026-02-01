@@ -176,54 +176,118 @@
             location.reload();
         }
 
-        // --- メッセージ送信 ---
-        function sendMessage(imageUrl = null) {
+        // --- メッセージ送信（分割アップロード機能付き） ---
+        async function sendMessage(imageUrl = null) {
             const input = document.getElementById('message-input');
             const text = input.value;
 
             if (!text && !imageUrl) return;
 
-            // データオブジェクト作成
-            const payload = {
-                text: text,
-                image: imageUrl, // 画像はBase64文字列として保存（簡易実装）
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
+            // 送信中であることを表示（簡易的）
+            const sendBtn = document.getElementById('send-btn');
+            sendBtn.disabled = true;
+            sendBtn.style.opacity = "0.5";
 
-            // JSON文字列にしてから暗号化
-            const encryptedContent = encryptData(JSON.stringify(payload));
+            try {
+                // 1. ペイロード作成
+                const payload = {
+                    text: text,
+                    image: imageUrl, // オリジナルのBase64データ
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
 
-            // Firestoreに保存
-            // ユーザーごとのコレクションを作成
-            db.collection('users').doc(currentUser.uid).collection('memos').add({
-                content: encryptedContent,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+                // 2. 暗号化
+                const encryptedContent = encryptData(JSON.stringify(payload));
+                
+                // 3. サイズチェックと分割保存
+                const BATCH_SIZE = 900000; // 安全マージンをとって約900KBで分割
+                const totalLength = encryptedContent.length;
+                
+                // メインのドキュメント参照を作成
+                const docRef = db.collection('users').doc(currentUser.uid).collection('memos').doc();
+                const batch = db.batch();
 
-            input.value = "";
+                if (totalLength <= BATCH_SIZE) {
+                    // サイズが小さい場合は通常通り保存
+                    batch.set(docRef, {
+                        content: encryptedContent,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        type: 'simple'
+                    });
+                } else {
+                    // サイズが大きい場合は分割保存
+                    const chunks = [];
+                    for (let i = 0; i < totalLength; i += BATCH_SIZE) {
+                        chunks.push(encryptedContent.substring(i, i + BATCH_SIZE));
+                    }
+
+                    // メインデータには「分割されてますよ」という情報だけ書く
+                    batch.set(docRef, {
+                        type: 'composite', // 分割タイプ
+                        count: chunks.length,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // 分割したデータをサブコレクションに入れる
+                    chunks.forEach((chunk, index) => {
+                        const chunkRef = docRef.collection('chunks').doc(index.toString().padStart(3, '0'));
+                        batch.set(chunkRef, { data: chunk });
+                    });
+                }
+
+                await batch.commit();
+                input.value = "";
+
+            } catch (e) {
+                console.error(e);
+                alert("送信エラー: " + e.message);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.style.opacity = "1";
+            }
         }
 
-        // --- メッセージ読み込み ---
+        // --- メッセージ読み込み（分割結合機能付き） ---
         function loadMessages() {
             db.collection('users').doc(currentUser.uid).collection('memos')
                 .orderBy('createdAt', 'asc')
-                .onSnapshot((snapshot) => {
+                .onSnapshot(async (snapshot) => {
                     const container = document.getElementById('chat-container');
-                    container.innerHTML = ""; // クリアして再描画
-
-                    snapshot.forEach((doc) => {
-                        const data = doc.data();
-                        if (!data.content) return;
-
-                        // 復号化
-                        const decryptedJSON = decryptData(data.content);
-                        if (!decryptedJSON) return; // 復号できないデータは無視
-
-                        const payload = JSON.parse(decryptedJSON);
-                        renderMessage(payload);
-                    });
                     
-                    // 最新のメッセージまでスクロール
+                    // 差分更新ではなく、簡易化のため毎回全クリアして描画します
+                    // （実際のアプリでは差分更新が良いですが、バグを防ぐため）
+                    container.innerHTML = ""; 
+
+                    for (const doc of snapshot.docs) {
+                        const data = doc.data();
+                        let encryptedString = "";
+
+                        try {
+                            if (data.type === 'composite') {
+                                // 分割データの場合：サブコレクションから全パーツを取得して結合
+                                // ※一度取得したらキャッシュされるので2回目以降は早いです
+                                const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
+                                encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
+                            } else {
+                                // 通常データの場合
+                                encryptedString = data.content;
+                            }
+
+                            if (!encryptedString) continue;
+
+                            // 復号化
+                            const decryptedJSON = decryptData(encryptedString);
+                            if (!decryptedJSON) continue;
+
+                            const payload = JSON.parse(decryptedJSON);
+                            renderMessage(payload);
+
+                        } catch (e) {
+                            console.log("読み込みエラー（無視します）:", e);
+                        }
+                    }
+                    
+                    // スクロール
                     container.scrollTop = container.scrollHeight;
                 });
         }
@@ -252,16 +316,21 @@
             if (e.key === 'Enter') sendMessage();
         }
 
-        // 画像選択時の処理（Base64に変換して保存）
-        // ※大規模なアプリではStorageを使うべきですが、簡易化のためFirestoreに文字列保存します
+        // 画像選択（圧縮なし・オリジナルデータ読み込み）
         function handleFileSelect(input) {
             if (input.files && input.files[0]) {
+                const file = input.files[0];
                 const reader = new FileReader();
+                
+                // 読み込み開始通知
+                alert("画像を読み込んでいます...（サイズが大きいと少し時間がかかります）");
+
                 reader.onload = function(e) {
-                    sendMessage(e.target.result); // 画像データ付きで送信
+                    sendMessage(e.target.result); // そのままのデータを送信へ渡す
                 };
-                reader.readAsDataURL(input.files[0]);
+                reader.readAsDataURL(file);
             }
+            input.value = '';
         }
 
         function escapeHtml(str) {

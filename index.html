@@ -67,7 +67,7 @@
         <label for="file-input" id="file-btn">
             <span class="material-icons" style="font-size: 30px;">add_photo_alternate</span>
         </label>
-        <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(this)">
+        <input type="file" id="file-input" accept="image/*,video/*" multiple onchange="handleFileSelect(this)">
         
         <input type="text" id="message-input" placeholder="メモを入力..." onkeypress="handleKeyPress(event)">
         
@@ -292,19 +292,27 @@
                 });
         }
 
-        // --- 画面表示 ---
+        // --- 画面表示（動画対応版） ---
         function renderMessage(payload) {
             const container = document.getElementById('chat-container');
             const div = document.createElement('div');
             div.className = 'message self';
 
             let html = "";
+            
+            // 画像または動画データがある場合
             if (payload.image) {
-                // 画像の長押し保存はブラウザの標準機能で動作します
-                html += `<img src="${payload.image}" alt="image">`;
+                // 先頭の文字を見て、動画か画像かを判断する
+                if (payload.image.startsWith('data:video')) {
+                    // 動画の場合：ビデオプレーヤーを表示
+                    html += `<video src="${payload.image}" controls style="max-width: 100%; border-radius: 10px; margin-top: 5px;"></video>`;
+                } else {
+                    // 画像の場合：今まで通り画像を表示
+                    html += `<img src="${payload.image}" alt="image">`;
+                }
             }
+            
             if (payload.text) {
-                // テキスト選択・コピーはCSSで標準動作します
                 html += `<div>${escapeHtml(payload.text)}</div>`;
             }
             div.innerHTML = html;
@@ -316,20 +324,37 @@
             if (e.key === 'Enter') sendMessage();
         }
 
-        // 画像選択（圧縮なし・オリジナルデータ読み込み）
-        function handleFileSelect(input) {
-            if (input.files && input.files[0]) {
-                const file = input.files[0];
-                const reader = new FileReader();
+        // 画像・動画選択時の処理（複数枚・動画対応版）
+        async function handleFileSelect(input) {
+            if (input.files && input.files.length > 0) {
+                // ファイル数を取得
+                const files = Array.from(input.files);
                 
-                // 読み込み開始通知
-                alert("画像を読み込んでいます...（サイズが大きいと少し時間がかかります）");
+                // 誤操作防止のため通知
+                alert(`${files.length}個のファイルを送信します。\n送信中はページを閉じないでください。`);
 
-                reader.onload = function(e) {
-                    sendMessage(e.target.result); // そのままのデータを送信へ渡す
-                };
-                reader.readAsDataURL(file);
+                // 1つずつ順番に処理して送信
+                for (const file of files) {
+                    await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = async function(e) {
+                            try {
+                                // 読み込んだデータを送信関数へ渡す
+                                // ※sendMessageは前のステップで「分割送信対応」になっている前提です
+                                await sendMessage(e.target.result);
+                                resolve(); // 次のファイルへ
+                            } catch (err) {
+                                console.error(err);
+                                resolve(); // エラーでも止まらず次へ
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                    });
+                }
+                
+                alert("すべての送信が完了しました！");
             }
+            // リセット
             input.value = '';
         }
 

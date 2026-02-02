@@ -316,12 +316,6 @@
                     html += `<img src="${payload.image}" alt="image">`;
                 }
             }
-            if (payload.text) {
-                html += `<div>${escapeHtml(payload.text)}</div>`;
-            }
-            div.innerHTML = html;
-            container.appendChild(div);
-        }
             
             if (payload.text) {
                 html += `<div>${escapeHtml(payload.text)}</div>`;

@@ -120,7 +120,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     <script>
-        // 【重要】ここにあなたのFirebase設定を貼り付けてください
+        // 【重要】ここにFirebase設定を貼り付ける
         // Firebase Console -> Project Settings -> General -> Your apps -> Config
         const firebaseConfig = {
             apiKey: "AIzaSyAST5jRP6cftYUHCb5MAtHr_H7SSht8mwA",
@@ -166,17 +166,17 @@
                 return;
             }
 
-            secretKey = key; // メモリ上にのみ保持
+            // 【追加】ここで鍵をブラウザに保存してしまう
+            localStorage.setItem('savedKey', key); 
+            secretKey = key; 
 
             // まずログインを試みる
             auth.signInWithEmailAndPassword(email, pass)
                 .then((userCredential) => {
-                    // ログイン成功
                     initApp(userCredential.user);
                 })
                 .catch((error) => {
-                    // 失敗した場合の処理
-                    // エラーコードが「ユーザー見つからない」や「認証情報無効（新規含む）」の場合、新規登録を試みる
+                    // エラー処理（前回と同じロジック）
                     const errorCode = error.code;
                     if (errorCode === 'auth/user-not-found' || 
                         errorCode === 'auth/invalid-login-credentials' || 
@@ -184,11 +184,9 @@
                         
                         auth.createUserWithEmailAndPassword(email, pass)
                             .then((userCredential) => {
-                                // 新規登録成功
                                 initApp(userCredential.user);
                             })
                             .catch((createError) => {
-                                // 新規登録も失敗した場合（＝すでにユーザーがいるがパスワードが違う場合など）
                                 if (createError.code === 'auth/email-already-in-use') {
                                     alert("パスワードが間違っています。");
                                 } else if (createError.code === 'auth/weak-password') {
@@ -210,6 +208,8 @@
         }
 
         function logout() {
+            // ログアウト時は保存した鍵も消去する
+            localStorage.removeItem('savedKey');
             auth.signOut();
             location.reload();
         }
@@ -418,6 +418,25 @@
             // 画面を隠す
             modal.style.display = 'none';
         }
+
+        // --- 自動ログイン監視機能 ---
+        // ページを開いた時、以前のログイン状態が残っているかチェックします
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                // ユーザーとしてのログイン記録は残っている。
+                // 次に、暗号化キーがブラウザに残っているか確認。
+                const savedKey = localStorage.getItem('savedKey');
+
+                if (savedKey) {
+                    // 両方揃っていれば、ログイン画面を見せずに開始！
+                    secretKey = savedKey;
+                    initApp(user);
+                } else {
+                    // キーだけ無い場合は（キャッシュクリア等）、ログイン画面で入力を待つ
+                    // 何もしなくてOK（モーダルが出たままになる）
+                }
+            }
+        });
 
         // --- ユーティリティ ---
         function handleKeyPress(e) {

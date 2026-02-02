@@ -378,19 +378,45 @@
             container.appendChild(div);
         }
 
-        // （共通部品）画像・動画タグを作る関数
+        // （共通部品）画像・動画タグを作る関数（クリック拡大対応版）
         function createMediaElement(src) {
             if (src.startsWith('data:video')) {
                 const video = document.createElement('video');
                 video.src = src;
                 video.controls = true;
-                // クリックで反応しないようにするなら以下は不要
+                // 動画はプレーヤーの機能で全画面にできるので、ここでの処理は不要
                 return video;
             } else {
                 const img = document.createElement('img');
                 img.src = src;
+                img.style.cursor = "pointer"; // クリックできることをカーソルで示す
+                
+                // 【追加】画像がクリックされたら拡大関数を呼ぶ
+                img.onclick = function(e) {
+                    // 親要素へのイベント伝播（バグの元）を防ぐ
+                    e.stopPropagation(); 
+                    openModal(src);
+                };
                 return img;
             }
+        }
+
+        // --- 追加：拡大表示の制御 ---
+        function openModal(src) {
+            const modal = document.getElementById('image-modal');
+            const img = document.getElementById('modal-img');
+            
+            // 拡大用画像のsrcに、クリックした画像のデータをセット
+            img.src = src;
+            
+            // 画面を表示（Flexboxで中央寄せ）
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('image-modal');
+            // 画面を隠す
+            modal.style.display = 'none';
         }
 
         // --- ユーティリティ ---
@@ -437,5 +463,10 @@
                 }[tag]));
         }
     </script>
+
+    <div id="image-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; cursor: pointer;" onclick="closeModal()">
+        <img id="modal-img" style="max-width: 95%; max-height: 95%; object-fit: contain; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+    </div>
+    
 </body>
 </html>

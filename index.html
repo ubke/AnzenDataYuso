@@ -38,6 +38,45 @@
         .modal-content input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
         .modal-content button { width: 100%; padding: 12px; background: #5d72a8; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
         .hidden { display: none !important; }
+
+        /* --- 修正：画像タイル表示用のスタイル --- */
+        .image-grid {
+            display: grid;
+            gap: 2px; /* 画像同士の隙間 */
+            border-radius: 12px;
+            overflow: hidden;
+            max-width: 100%;
+        }
+        
+        /* 枚数に応じてレイアウトを変える魔法 */
+        .image-grid[data-count="1"] { grid-template-columns: 1fr; }
+        .image-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
+        .image-grid[data-count="3"] { grid-template-columns: 1fr 1fr 1fr; }
+        .image-grid[data-count="4"] { grid-template-columns: 1fr 1fr; } /* 田の字 */
+        .image-grid[data-count="5"] { grid-template-columns: 1fr 1fr 1fr; }
+        .image-grid[data-count="6"] { grid-template-columns: 1fr 1fr 1fr; }
+        /* 7枚以上は3列で折り返し */
+        .image-grid[data-count="7"], .image-grid[data-count="8"], .image-grid[data-count="9"] { 
+            grid-template-columns: repeat(3, 1fr); 
+        }
+
+        /* グリッド内の画像設定 */
+        .image-grid img, .image-grid video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 正方形に切り抜いて隙間を埋める */
+            display: block;
+            margin: 0 !important;
+            border-radius: 0 !important; /* 角丸は親枠に任せる */
+            aspect-ratio: 1 / 1; /* インスタのような正方形タイル */
+            cursor: pointer;
+        }
+
+        /* 1枚だけの時は正方形にせず、元の比率で見せる */
+        .image-grid[data-count="1"] img, .image-grid[data-count="1"] video {
+            aspect-ratio: auto;
+            max-height: 350px;
+        }
     </style>
 </head>
 <body>
@@ -250,78 +289,140 @@
         // 描画の競合を防ぐための「整理券番号」
         let latestRenderId = 0;
 
-        // --- メッセージ読み込み ---
+        // --- メッセージ読み込み（最新50件のみ取得・高速化版） ---
         function loadMessages() {
             db.collection('users').doc(currentUser.uid).collection('memos')
-                .orderBy('createdAt', 'asc')
-                .onSnapshot((snapshot) => {
+                .orderBy('createdAt', 'asc') // 古い順に並べるが...
+                .limitToLast(50)             // 【重要】最後の（最新の）50件だけを取得する制限
+                .onSnapshot(async (snapshot) => {
                     const container = document.getElementById('chat-container');
+                    const changes = snapshot.docChanges();
 
-                    // 【変更点】
-                    // snapshot.docChanges() を使うと、「何が新しく追加されたか」だけ教えてくれます。
-                    // LINEと同じく、新着メッセージだけを処理するループです。
-                    snapshot.docChanges().forEach(async (change) => {
+                    // 1つずつ順番に処理
+                    for (const change of changes) {
                         if (change.type === "added") {
                             const doc = change.doc;
                             const data = doc.data();
 
-                            // すでに画面にあるかチェック（念のため重複防止）
-                            if (document.getElementById(doc.id)) return;
+                            // すでに表示済みならスキップ
+                            if (document.getElementById(doc.id)) continue;
 
-                            // --- ここから下は今までと同じデータ復元処理 ---
                             let encryptedString = "";
                             try {
                                 if (data.type === 'composite') {
+                                    // 分割データの結合
                                     const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
                                     encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
                                 } else {
+                                    // 通常データ
                                     encryptedString = data.content;
                                 }
 
-                                if (!encryptedString) return;
+                                if (!encryptedString) continue;
 
+                                // 復号化
                                 const decryptedJSON = decryptData(encryptedString);
-                                if (!decryptedJSON) return;
+                                if (!decryptedJSON) continue;
 
                                 const payload = JSON.parse(decryptedJSON);
 
-                                // 画面に追加する関数へ（IDを渡して管理しやすくする）
+                                // 画面に追加
                                 renderMessage(payload, doc.id);
-                                
-                                // 最新の場所にスクロール
-                                container.scrollTop = container.scrollHeight;
 
                             } catch (e) {
                                 console.log("読み込みエラー:", e);
                             }
                         }
-                    });
+                    }
+
+                    // 読み込みが終わったら、即座に最新（一番下）を表示
+                    // 処理が軽くなったので、待ち時間はほぼ不要ですが念のため微調整
+                    setTimeout(() => {
+                        container.scrollTop = container.scrollHeight;
+                    }, 50);
                 });
         }
-
-        // --- 画面表示 ---
+        // --- 画面表示（LINE風まとめ表示機能付き） ---
         function renderMessage(payload, docId) {
             const container = document.getElementById('chat-container');
-            const div = document.createElement('div');
-            div.className = 'message self';
+            const isMedia = !!payload.image; // 画像または動画か？
             
-            // これで「このメッセージは表示済み」と分かるようになります
-            if (docId) div.id = docId; 
-
-            let html = "";
-            if (payload.image) {
-                if (payload.image.startsWith('data:video')) {
-                    html += `<video src="${payload.image}" controls style="max-width: 100%; border-radius: 10px; margin-top: 5px;"></video>`;
-                } else {
-                    html += `<img src="${payload.image}" alt="image">`;
+            // ★合体判定ロジック★
+            // 1. 直前のメッセージを取得
+            const lastMsg = container.lastElementChild;
+            
+            // 2. 合体できるかチェック
+            let shouldMerge = false;
+            if (lastMsg && isMedia) {
+                // 直前も「画像グループ」で、かつ「自分のメッセージ」か確認
+                const isLastGroup = lastMsg.classList.contains('media-group');
+                // 時間差チェック（datasetに保存した時間と、今の時間の差が3秒以内なら同じグループとみなす）
+                // ※簡易的に「直前の要素が存在すれば合体」としていますが、より厳密にするならタイムスタンプ比較も可能です
+                if (isLastGroup) {
+                     shouldMerge = true;
                 }
             }
+
+            // --- A. 合体する場合（前の吹き出しに追加） ---
+            if (shouldMerge) {
+                const grid = lastMsg.querySelector('.image-grid');
+                const newItem = createMediaElement(payload.image);
+                
+                // グリッドに追加
+                grid.appendChild(newItem);
+                
+                // データ属性（枚数）を更新 → CSSが反応してレイアウトが変わる
+                const newCount = grid.children.length;
+                grid.setAttribute('data-count', newCount);
+                
+                // IDを最新のものに更新しておく（既読管理などで使う場合のため）
+                if (docId) lastMsg.id = docId;
             
-            if (payload.text) {
-                html += `<div>${escapeHtml(payload.text)}</div>`;
+            // --- B. 新しく吹き出しを作る場合 ---
+            } else {
+                const div = document.createElement('div');
+                div.className = 'message self';
+                if (docId) div.id = docId;
+
+                let contentHtml = "";
+
+                if (isMedia) {
+                    // 画像・動画の場合：グリッドコンテナを作る
+                    div.classList.add('media-group'); // 合体用の目印クラス
+                    
+                    const grid = document.createElement('div');
+                    grid.className = 'image-grid';
+                    grid.setAttribute('data-count', '1'); // 最初は1枚
+                    
+                    const item = createMediaElement(payload.image);
+                    grid.appendChild(item);
+                    div.appendChild(grid);
+                    
+                } else {
+                    // テキストの場合
+                    if (payload.text) {
+                        contentHtml = `<div>${escapeHtml(payload.text)}</div>`;
+                    }
+                    div.innerHTML = contentHtml;
+                }
+
+                container.appendChild(div);
             }
-            div.innerHTML = html;
-            container.appendChild(div);
+        }
+
+        // （共通部品）画像・動画タグを作る関数
+        function createMediaElement(src) {
+            if (src.startsWith('data:video')) {
+                const video = document.createElement('video');
+                video.src = src;
+                video.controls = true;
+                return video;
+            } else {
+                const img = document.createElement('img');
+                img.src = src;
+                // クリックしたら拡大などの処理はいったん省略
+                return img;
+            }
         }
 
         // --- ユーティリティ ---

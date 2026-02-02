@@ -39,44 +39,43 @@
         .modal-content button { width: 100%; padding: 12px; background: #5d72a8; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
         .hidden { display: none !important; }
 
-        /* --- 修正：画像タイル表示用のスタイル --- */
+        /* 画像グリッドのスタイル */
         .image-grid {
             display: grid;
-            gap: 2px; /* 画像同士の隙間 */
+            gap: 2px;
             border-radius: 12px;
             overflow: hidden;
-            max-width: 100%;
+            width: 100%;
+            max-width: 300px; /* バカでかくならないように制限 */
         }
         
-        /* 枚数に応じてレイアウトを変える魔法 */
+        /* 枚数ごとのレイアウト定義 */
         .image-grid[data-count="1"] { grid-template-columns: 1fr; }
         .image-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
         .image-grid[data-count="3"] { grid-template-columns: 1fr 1fr 1fr; }
-        .image-grid[data-count="4"] { grid-template-columns: 1fr 1fr; } /* 田の字 */
-        .image-grid[data-count="5"] { grid-template-columns: 1fr 1fr 1fr; }
-        .image-grid[data-count="6"] { grid-template-columns: 1fr 1fr 1fr; }
-        /* 7枚以上は3列で折り返し */
-        .image-grid[data-count="7"], .image-grid[data-count="8"], .image-grid[data-count="9"] { 
+        .image-grid[data-count="4"] { grid-template-columns: 1fr 1fr; } /* 2x2 */
+        
+        /* 5枚以上は3列 */
+        .image-grid[data-count="5"], .image-grid[data-count="6"], 
+        .image-grid[data-count="7"], .image-grid[data-count="8"], 
+        .image-grid[data-count="9"] { 
             grid-template-columns: repeat(3, 1fr); 
         }
 
-        /* グリッド内の画像設定 */
         .image-grid img, .image-grid video {
             width: 100%;
             height: 100%;
-            object-fit: cover; /* 正方形に切り抜いて隙間を埋める */
+            object-fit: cover;
+            aspect-ratio: 1 / 1; /* 正方形にする */
             display: block;
-            margin: 0 !important;
-            border-radius: 0 !important; /* 角丸は親枠に任せる */
-            aspect-ratio: 1 / 1; /* インスタのような正方形タイル */
-            cursor: pointer;
         }
-
-        /* 1枚だけの時は正方形にせず、元の比率で見せる */
+        
+        /* 1枚だけの時は正方形強制を解除 */
         .image-grid[data-count="1"] img, .image-grid[data-count="1"] video {
             aspect-ratio: auto;
-            max-height: 350px;
+            max-height: 400px;
         }
+        
     </style>
 </head>
 <body>
@@ -215,59 +214,57 @@
             location.reload();
         }
 
-        // --- メッセージ送信（分割アップロード機能付き） ---
-        async function sendMessage(imageUrl = null) {
+        // --- メッセージ送信（複数枚セット対応版） ---
+        async function sendMessage(textInput = null, imagesInput = null) {
+            // テキストボックスの値を取得（引数がなければ）
             const input = document.getElementById('message-input');
-            const text = input.value;
+            const text = textInput !== null ? textInput : input.value;
+            
+            // 画像配列の準備
+            let images = [];
+            if (imagesInput) {
+                // 配列ならそのまま、単体なら配列にする（互換性のため）
+                images = Array.isArray(imagesInput) ? imagesInput : [imagesInput];
+            }
 
-            if (!text && !imageUrl) return;
+            if (!text && images.length === 0) return;
 
-            // 送信中であることを表示（簡易的）
             const sendBtn = document.getElementById('send-btn');
             sendBtn.disabled = true;
             sendBtn.style.opacity = "0.5";
 
             try {
-                // 1. ペイロード作成
+                // ペイロード作成（images配列を保存）
                 const payload = {
                     text: text,
-                    image: imageUrl, // オリジナルのBase64データ
+                    images: images, // ここに複数枚入る
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
-                // 2. 暗号化
+                // 暗号化・分割保存ロジック（変更なし、そのまま利用）
                 const encryptedContent = encryptData(JSON.stringify(payload));
-                
-                // 3. サイズチェックと分割保存
-                const BATCH_SIZE = 900000; // 安全マージンをとって約900KBで分割
+                const BATCH_SIZE = 900000;
                 const totalLength = encryptedContent.length;
                 
-                // メインのドキュメント参照を作成
                 const docRef = db.collection('users').doc(currentUser.uid).collection('memos').doc();
                 const batch = db.batch();
 
                 if (totalLength <= BATCH_SIZE) {
-                    // サイズが小さい場合は通常通り保存
                     batch.set(docRef, {
                         content: encryptedContent,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                         type: 'simple'
                     });
                 } else {
-                    // サイズが大きい場合は分割保存
                     const chunks = [];
                     for (let i = 0; i < totalLength; i += BATCH_SIZE) {
                         chunks.push(encryptedContent.substring(i, i + BATCH_SIZE));
                     }
-
-                    // メインデータには「分割されてますよ」という情報だけ書く
                     batch.set(docRef, {
-                        type: 'composite', // 分割タイプ
+                        type: 'composite',
                         count: chunks.length,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-
-                    // 分割したデータをサブコレクションに入れる
                     chunks.forEach((chunk, index) => {
                         const chunkRef = docRef.collection('chunks').doc(index.toString().padStart(3, '0'));
                         batch.set(chunkRef, { data: chunk });
@@ -275,7 +272,7 @@
                 }
 
                 await batch.commit();
-                input.value = "";
+                input.value = ""; // テキストボックスをクリア
 
             } catch (e) {
                 console.error(e);
@@ -342,72 +339,43 @@
                     }, 50);
                 });
         }
-        // --- 画面表示（LINE風まとめ表示機能付き） ---
+        
+        // --- 画面表示（セット単位でのタイル表示版） ---
         function renderMessage(payload, docId) {
             const container = document.getElementById('chat-container');
-            const isMedia = !!payload.image; // 画像または動画か？
+            const div = document.createElement('div');
+            div.className = 'message self';
+            if (docId) div.id = docId;
+
+            // 画像データの取り出し（新旧両方のデータ形式に対応）
+            const images = payload.images || (payload.image ? [payload.image] : []);
             
-            // ★合体判定ロジック★
-            // 1. 直前のメッセージを取得
-            const lastMsg = container.lastElementChild;
-            
-            // 2. 合体できるかチェック
-            let shouldMerge = false;
-            if (lastMsg && isMedia) {
-                // 直前も「画像グループ」で、かつ「自分のメッセージ」か確認
-                const isLastGroup = lastMsg.classList.contains('media-group');
-                // 時間差チェック（datasetに保存した時間と、今の時間の差が3秒以内なら同じグループとみなす）
-                // ※簡易的に「直前の要素が存在すれば合体」としていますが、より厳密にするならタイムスタンプ比較も可能です
-                if (isLastGroup) {
-                     shouldMerge = true;
-                }
+            let html = "";
+
+            // 画像がある場合
+            if (images.length > 0) {
+                // グリッドコンテナを作成（data-count属性でCSSを切り替える）
+                const gridDiv = document.createElement('div');
+                gridDiv.className = 'image-grid';
+                gridDiv.setAttribute('data-count', images.length);
+
+                // 画像を1枚ずつ生成してグリッドに入れる
+                images.forEach(src => {
+                    const el = createMediaElement(src);
+                    gridDiv.appendChild(el);
+                });
+
+                div.appendChild(gridDiv);
             }
 
-            // --- A. 合体する場合（前の吹き出しに追加） ---
-            if (shouldMerge) {
-                const grid = lastMsg.querySelector('.image-grid');
-                const newItem = createMediaElement(payload.image);
-                
-                // グリッドに追加
-                grid.appendChild(newItem);
-                
-                // データ属性（枚数）を更新 → CSSが反応してレイアウトが変わる
-                const newCount = grid.children.length;
-                grid.setAttribute('data-count', newCount);
-                
-                // IDを最新のものに更新しておく（既読管理などで使う場合のため）
-                if (docId) lastMsg.id = docId;
-            
-            // --- B. 新しく吹き出しを作る場合 ---
-            } else {
-                const div = document.createElement('div');
-                div.className = 'message self';
-                if (docId) div.id = docId;
-
-                let contentHtml = "";
-
-                if (isMedia) {
-                    // 画像・動画の場合：グリッドコンテナを作る
-                    div.classList.add('media-group'); // 合体用の目印クラス
-                    
-                    const grid = document.createElement('div');
-                    grid.className = 'image-grid';
-                    grid.setAttribute('data-count', '1'); // 最初は1枚
-                    
-                    const item = createMediaElement(payload.image);
-                    grid.appendChild(item);
-                    div.appendChild(grid);
-                    
-                } else {
-                    // テキストの場合
-                    if (payload.text) {
-                        contentHtml = `<div>${escapeHtml(payload.text)}</div>`;
-                    }
-                    div.innerHTML = contentHtml;
-                }
-
-                container.appendChild(div);
+            // テキストがある場合
+            if (payload.text) {
+                const textDiv = document.createElement('div');
+                textDiv.innerText = payload.text; // 安全のためinnerTextを使用
+                div.appendChild(textDiv);
             }
+
+            container.appendChild(div);
         }
 
         // （共通部品）画像・動画タグを作る関数
@@ -416,11 +384,11 @@
                 const video = document.createElement('video');
                 video.src = src;
                 video.controls = true;
+                // クリックで反応しないようにするなら以下は不要
                 return video;
             } else {
                 const img = document.createElement('img');
                 img.src = src;
-                // クリックしたら拡大などの処理はいったん省略
                 return img;
             }
         }
@@ -430,41 +398,30 @@
             if (e.key === 'Enter') sendMessage();
         }
 
-        // 画像・動画選択時の処理（複数枚・動画対応版）
-        // 画像・動画選択時の処理（順序保証版）
+        // 画像・動画選択時の処理（セット送信版）
         async function handleFileSelect(input) {
             if (input.files && input.files.length > 0) {
-                // ファイル一覧を取得（選択した順序で並んでいます）
                 const files = Array.from(input.files);
                 
-                // 誤操作防止のため通知
-                alert(`${files.length}個のファイルを送信します。\n順番を保つため、少し時間をかけて送信します...`);
+                // 読み込み中を表示
+                alert(`${files.length}枚の画像を読み込んでいます...`);
 
-                // 1つずつ順番に処理して送信
-                for (const file of files) {
-                    await new Promise((resolve, reject) => {
+                // 全てのファイルを読み込むまで待つ（Promise.all）
+                const readPromises = files.map(file => {
+                    return new Promise((resolve) => {
                         const reader = new FileReader();
-                        reader.onload = async function(e) {
-                            try {
-                                await sendMessage(e.target.result);
-                                
-                                // 【★ここが重要】次の送信まで0.5秒待つ
-                                // これにより、確実に「作成日時」に差がつき、順番通りに並びます
-                                await new Promise(r => setTimeout(r, 500)); 
-                                
-                                resolve(); 
-                            } catch (err) {
-                                console.error(err);
-                                resolve(); 
-                            }
-                        };
+                        reader.onload = (e) => resolve(e.target.result);
                         reader.readAsDataURL(file);
                     });
-                }
+                });
+
+                // 全ての画像データが揃ったら、まとめて送信！
+                const imagesData = await Promise.all(readPromises);
                 
-                alert("すべての送信が完了しました！");
+                // 第2引数に配列を渡す
+                // ※このあとsendMessageも修正する必要があります！
+                await sendMessage(null, imagesData); 
             }
-            // リセット
             input.value = '';
         }
 

@@ -254,80 +254,74 @@
         function loadMessages() {
             db.collection('users').doc(currentUser.uid).collection('memos')
                 .orderBy('createdAt', 'asc')
-                .onSnapshot(async (snapshot) => {
-                    // 1. 今回の処理に新しい整理券番号を発行
-                    latestRenderId++;
-                    const myRenderId = latestRenderId;
-
+                .onSnapshot((snapshot) => {
                     const container = document.getElementById('chat-container');
-                    
-                    // 2. 画面をクリア
-                    container.innerHTML = ""; 
 
-                    // 3. データを1つずつ処理
-                    for (const doc of snapshot.docs) {
-                        // 【★重要】処理の途中で、もっと新しい更新（整理券）が来ていたら、
-                        // この古い処理はもう不要なので中断（return）する
-                        if (myRenderId !== latestRenderId) return;
+                    // 【変更点】
+                    // snapshot.docChanges() を使うと、「何が新しく追加されたか」だけ教えてくれます。
+                    // LINEと同じく、新着メッセージだけを処理するループです。
+                    snapshot.docChanges().forEach(async (change) => {
+                        if (change.type === "added") {
+                            const doc = change.doc;
+                            const data = doc.data();
 
-                        const data = doc.data();
-                        let encryptedString = "";
+                            // すでに画面にあるかチェック（念のため重複防止）
+                            if (document.getElementById(doc.id)) return;
 
-                        try {
-                            if (data.type === 'composite') {
-                                // 分割データの場合
-                                const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
-                                encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
-                            } else {
-                                // 通常データの場合
-                                encryptedString = data.content;
+                            // --- ここから下は今までと同じデータ復元処理 ---
+                            let encryptedString = "";
+                            try {
+                                if (data.type === 'composite') {
+                                    const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
+                                    encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
+                                } else {
+                                    encryptedString = data.content;
+                                }
+
+                                if (!encryptedString) return;
+
+                                const decryptedJSON = decryptData(encryptedString);
+                                if (!decryptedJSON) return;
+
+                                const payload = JSON.parse(decryptedJSON);
+
+                                // 画面に追加する関数へ（IDを渡して管理しやすくする）
+                                renderMessage(payload, doc.id);
+                                
+                                // 最新の場所にスクロール
+                                container.scrollTop = container.scrollHeight;
+
+                            } catch (e) {
+                                console.log("読み込みエラー:", e);
                             }
-
-                            if (!encryptedString) continue;
-
-                            // 復号化
-                            const decryptedJSON = decryptData(encryptedString);
-                            if (!decryptedJSON) continue;
-
-                            const payload = JSON.parse(decryptedJSON);
-                            
-                            // 【★重要】描画する直前にもう一度チェック！
-                            // 別の更新処理が画面をクリアした後だったら、書き込まない
-                            if (myRenderId !== latestRenderId) return;
-
-                            renderMessage(payload);
-
-                        } catch (e) {
-                            console.log("読み込みエラー（無視します）:", e);
                         }
-                    }
-                    
-                    // 最後にスクロール（ここもチェック）
-                    if (myRenderId === latestRenderId) {
-                        container.scrollTop = container.scrollHeight;
-                    }
+                    });
                 });
         }
 
-        // --- 画面表示（動画対応版） ---
-        function renderMessage(payload) {
+        // --- 画面表示 ---
+        function renderMessage(payload, docId) {
             const container = document.getElementById('chat-container');
             const div = document.createElement('div');
             div.className = 'message self';
+            
+            // これで「このメッセージは表示済み」と分かるようになります
+            if (docId) div.id = docId; 
 
             let html = "";
-            
-            // 画像または動画データがある場合
             if (payload.image) {
-                // 先頭の文字を見て、動画か画像かを判断する
                 if (payload.image.startsWith('data:video')) {
-                    // 動画の場合：ビデオプレーヤーを表示
                     html += `<video src="${payload.image}" controls style="max-width: 100%; border-radius: 10px; margin-top: 5px;"></video>`;
                 } else {
-                    // 画像の場合：今まで通り画像を表示
                     html += `<img src="${payload.image}" alt="image">`;
                 }
             }
+            if (payload.text) {
+                html += `<div>${escapeHtml(payload.text)}</div>`;
+            }
+            div.innerHTML = html;
+            container.appendChild(div);
+        }
             
             if (payload.text) {
                 html += `<div>${escapeHtml(payload.text)}</div>`;

@@ -247,25 +247,35 @@
             }
         }
 
-        // --- メッセージ読み込み（分割結合機能付き） ---
+        // 描画の競合を防ぐための「整理券番号」
+        let latestRenderId = 0;
+
+        // --- メッセージ読み込み ---
         function loadMessages() {
             db.collection('users').doc(currentUser.uid).collection('memos')
                 .orderBy('createdAt', 'asc')
                 .onSnapshot(async (snapshot) => {
+                    // 1. 今回の処理に新しい整理券番号を発行
+                    latestRenderId++;
+                    const myRenderId = latestRenderId;
+
                     const container = document.getElementById('chat-container');
                     
-                    // 差分更新ではなく、簡易化のため毎回全クリアして描画します
-                    // （実際のアプリでは差分更新が良いですが、バグを防ぐため）
+                    // 2. 画面をクリア
                     container.innerHTML = ""; 
 
+                    // 3. データを1つずつ処理
                     for (const doc of snapshot.docs) {
+                        // 【★重要】処理の途中で、もっと新しい更新（整理券）が来ていたら、
+                        // この古い処理はもう不要なので中断（return）する
+                        if (myRenderId !== latestRenderId) return;
+
                         const data = doc.data();
                         let encryptedString = "";
 
                         try {
                             if (data.type === 'composite') {
-                                // 分割データの場合：サブコレクションから全パーツを取得して結合
-                                // ※一度取得したらキャッシュされるので2回目以降は早いです
+                                // 分割データの場合
                                 const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
                                 encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
                             } else {
@@ -280,6 +290,11 @@
                             if (!decryptedJSON) continue;
 
                             const payload = JSON.parse(decryptedJSON);
+                            
+                            // 【★重要】描画する直前にもう一度チェック！
+                            // 別の更新処理が画面をクリアした後だったら、書き込まない
+                            if (myRenderId !== latestRenderId) return;
+
                             renderMessage(payload);
 
                         } catch (e) {
@@ -287,8 +302,10 @@
                         }
                     }
                     
-                    // スクロール
-                    container.scrollTop = container.scrollHeight;
+                    // 最後にスクロール（ここもチェック）
+                    if (myRenderId === latestRenderId) {
+                        container.scrollTop = container.scrollHeight;
+                    }
                 });
         }
 

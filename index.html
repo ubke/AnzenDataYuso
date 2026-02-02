@@ -325,13 +325,14 @@
         }
 
         // 画像・動画選択時の処理（複数枚・動画対応版）
+        // 画像・動画選択時の処理（順序保証版）
         async function handleFileSelect(input) {
             if (input.files && input.files.length > 0) {
-                // ファイル数を取得
+                // ファイル一覧を取得（選択した順序で並んでいます）
                 const files = Array.from(input.files);
                 
                 // 誤操作防止のため通知
-                alert(`${files.length}個のファイルを送信します。\n送信中はページを閉じないでください。`);
+                alert(`${files.length}個のファイルを送信します。\n順番を保つため、少し時間をかけて送信します...`);
 
                 // 1つずつ順番に処理して送信
                 for (const file of files) {
@@ -339,13 +340,16 @@
                         const reader = new FileReader();
                         reader.onload = async function(e) {
                             try {
-                                // 読み込んだデータを送信関数へ渡す
-                                // ※sendMessageは前のステップで「分割送信対応」になっている前提です
                                 await sendMessage(e.target.result);
-                                resolve(); // 次のファイルへ
+                                
+                                // 【★ここが重要】次の送信まで0.5秒待つ
+                                // これにより、確実に「作成日時」に差がつき、順番通りに並びます
+                                await new Promise(r => setTimeout(r, 500)); 
+                                
+                                resolve(); 
                             } catch (err) {
                                 console.error(err);
-                                resolve(); // エラーでも止まらず次へ
+                                resolve(); 
                             }
                         };
                         reader.readAsDataURL(file);

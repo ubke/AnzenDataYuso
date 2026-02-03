@@ -180,6 +180,20 @@
         .message .image-grid + .timestamp {
             margin-top: 6px;
         }
+
+        /* モーダル内の画像にタッチ操作の設定を追加 */
+        #modal-img {
+            /* 既存のスタイル */
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            
+            /* 【追加】ここから下を追加してください */
+            touch-action: none; /* ブラウザのデフォルト操作を無効化 */
+            transform-origin: center center; /* 真ん中を中心に拡大 */
+            transition: transform 0.1s ease-out; /* 動きを滑らかに */
+        }
         
     </style>
 </head>
@@ -681,22 +695,98 @@
             }
         }
 
-        // --- 追加：拡大表示の制御 ---
+        // --- ズーム機能付きモーダル制御 ---
+        
+        const modal = document.getElementById('image-modal');
+        const img = document.getElementById('modal-img');
+
+        let state = {
+            scale: 1,
+            panning: false,
+            pointX: 0,
+            pointY: 0,
+            startX: 0,
+            startY: 0
+        };
+
+        // モーダルを開く
         function openModal(src) {
-            const modal = document.getElementById('image-modal');
-            const img = document.getElementById('modal-img');
-            
-            // 拡大用画像のsrcに、クリックした画像のデータをセット
             img.src = src;
-            
-            // 画面を表示（Flexboxで中央寄せ）
             modal.style.display = 'flex';
+            // 初期化
+            state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0 };
+            updateTransform();
         }
 
+        // モーダルを閉じる
         function closeModal() {
-            const modal = document.getElementById('image-modal');
-            // 画面を隠す
             modal.style.display = 'none';
+        }
+
+        function updateTransform() {
+            img.style.transform = `translate(${state.pointX}px, ${state.pointY}px) scale(${state.scale})`;
+        }
+
+        // --- タッチ操作のロジック ---
+        let startDist = 0;
+        let startScale = 1;
+
+        modal.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // ピンチ（ズーム）開始
+                e.preventDefault();
+                startDist = getDistance(e.touches[0], e.touches[1]);
+                startScale = state.scale;
+            } else if (e.touches.length === 1) {
+                // パン（移動）開始
+                state.panning = true;
+                state.startX = e.touches[0].clientX - state.pointX;
+                state.startY = e.touches[0].clientY - state.pointY;
+            }
+        });
+
+        modal.addEventListener('touchmove', (e) => {
+            e.preventDefault(); // 画面スクロール防止
+
+            if (e.touches.length === 2) {
+                // ピンチ中
+                const dist = getDistance(e.touches[0], e.touches[1]);
+                // 開始時の倍率 × (今の距離 ÷ 開始時の距離)
+                let newScale = startScale * (dist / startDist);
+                
+                // 制限（1倍〜5倍）
+                if (newScale < 1) newScale = 1;
+                if (newScale > 5) newScale = 5;
+
+                state.scale = newScale;
+                updateTransform();
+
+            } else if (e.touches.length === 1 && state.panning && state.scale > 1) {
+                // 移動中（拡大している時のみ）
+                state.pointX = e.touches[0].clientX - state.startX;
+                state.pointY = e.touches[0].clientY - state.startY;
+                updateTransform();
+            }
+        });
+
+        modal.addEventListener('touchend', (e) => {
+            // 指が離れた時
+            if (e.touches.length === 0) {
+                state.panning = false;
+                
+                // 拡大していない状態でタップ（移動量がほぼ0）なら閉じる
+                // ※タップ判定：touchend発生時にスケールが1なら閉じる
+                if (state.scale === 1) {
+                    closeModal();
+                }
+            }
+        });
+        
+        // 補助関数：2点間の距離
+        function getDistance(t1, t2) {
+            const dx = t1.clientX - t2.clientX;
+            const dy = t1.clientY - t2.clientY;
+            return Math.sqrt(dx*dx + dy*dy);
         }
 
         // --- 自動ログイン監視機能 ---
@@ -762,7 +852,7 @@
         }
     </script>
 
-    <div id="image-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; cursor: pointer;" onclick="closeModal()">
+    <div id="image-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center;">
         <img id="modal-img" style="max-width: 95%; max-height: 95%; object-fit: contain; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
     </div>
     

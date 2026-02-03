@@ -219,6 +219,66 @@
         #image-modal {
             touch-action: none;
         }
+
+        /* --- 画像プレビューとD&Dのスタイル --- */
+        
+        /* プレビューエリア（入力欄の上に表示） */
+        #preview-area {
+            display: flex;
+            gap: 10px;
+            padding: 0 10px;    /* 画像がある時だけ余白が出るようにJSで制御、またはmin-height */
+            background: #f5f5f5;
+            overflow-x: auto;   /* 横スクロール */
+            border-top: 1px solid #ddd;
+        }
+        
+        /* 画像が1枚もない時は隠す */
+        #preview-area:empty {
+            display: none;
+            padding: 0;
+            border: none;
+        }
+
+        /* サムネイルの枠 */
+        .preview-item {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            margin: 10px 0;
+            border-radius: 5px;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 1px solid #ccc;
+            background: white;
+        }
+
+        .preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* 削除ボタン（×） */
+        .preview-remove {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            font-size: 14px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        /* ドラッグしてファイルを持ってきた時のハイライト */
+        #input-area.dragover {
+            background-color: #e0e7ff; /* 薄い青色 */
+            border-top: 2px solid #5d72a8;
+        }
         
     </style>
 </head>
@@ -246,8 +306,9 @@
         </button>
     </header>
 
-    <div id="chat-container">
-        </div>
+    <div id="chat-container"></div>
+
+    <div id="preview-area"></div>
 
     <div id="input-area">
         <label for="file-input" id="file-btn">
@@ -875,29 +936,173 @@
             if (e.key === 'Enter') sendMessage();
         }
 
-        // 画像・動画選択時の処理（セット送信版）
-        async function handleFileSelect(input) {
+        // --- 画像ストック・送信ロジック（D&D対応版） ---
+
+        // 送信待ちのファイルを溜めておく配列
+        let stockedFiles = [];
+
+        // 1. ファイル選択（ボタンから）
+        function handleFileSelect(input) {
             if (input.files && input.files.length > 0) {
-                const files = Array.from(input.files);
-                
-                // 【削除】ここにあった alert(...) を削除しました。
-                // これでポップアップは出ずに、裏側で静かに処理が進みます。
-
-                // 全てのファイルを読み込むまで待つ（Promise.all）
-                const readPromises = files.map(file => {
-                    return new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onload = (e) => resolve(e.target.result);
-                        reader.readAsDataURL(file);
-                    });
-                });
-
-                // 全ての画像データが揃ったら、まとめて送信！
-                const imagesData = await Promise.all(readPromises);
-                
-                await sendMessage(null, imagesData); 
+                // 配列に変換してストックに追加
+                addFilesToStock(Array.from(input.files));
+                input.value = ''; // 同じファイルを再度選べるようにリセット
             }
-            input.value = '';
+        }
+
+        // 2. ドラッグ＆ドロップの処理
+        const inputArea = document.getElementById('input-area');
+
+        // ドラッグして重なった時
+        inputArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            inputArea.classList.add('dragover'); // 色を変える
+        });
+
+        // ドラッグして離れた時
+        inputArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            inputArea.classList.remove('dragover'); // 色を戻す
+        });
+
+        // ドロップした時
+        inputArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            inputArea.classList.remove('dragover'); // 色を戻す
+            
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                addFilesToStock(Array.from(e.dataTransfer.files));
+            }
+        });
+
+        // --- 共通：ファイルをストックに追加してプレビュー更新 ---
+        function addFilesToStock(files) {
+            // 画像か動画だけをフィルタリング
+            const validFiles = files.filter(file => file.type.startsWith('image/') || file.type.startsWith('video/'));
+            
+            if (validFiles.length === 0) return;
+
+            // 配列に追加
+            stockedFiles = stockedFiles.concat(validFiles);
+            updatePreview();
+        }
+
+        // プレビュー画面の更新
+        function updatePreview() {
+            const previewArea = document.getElementById('preview-area');
+            previewArea.innerHTML = ""; // 一旦クリア
+            
+            stockedFiles.forEach((file, index) => {
+                const div = document.createElement('div');
+                div.className = 'preview-item';
+                
+                // 画像を表示
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file); // ブラウザ用の一時URLを作成
+                
+                // 削除ボタン（×）
+                const btn = document.createElement('div');
+                btn.className = 'preview-remove';
+                btn.innerText = '×';
+                btn.onclick = (e) => {
+                    // 親要素へのクリック伝播を防ぐ（重要）
+                    e.stopPropagation(); 
+                    removeFile(index);
+                };
+                
+                div.appendChild(img);
+                div.appendChild(btn);
+                previewArea.appendChild(div);
+            });
+        }
+
+        // ストックから削除
+        function removeFile(index) {
+            stockedFiles.splice(index, 1); // 配列から削除
+            updatePreview(); // 再描画
+        }
+
+        // --- 送信処理（ストックされた画像を処理するよう変更） ---
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value;
+            
+            // テキストも画像もなければ何もしない
+            if (!text && stockedFiles.length === 0) return;
+
+            const sendBtn = document.getElementById('send-btn');
+            sendBtn.disabled = true;
+            sendBtn.style.opacity = "0.5";
+
+            try {
+                // 1. ストックされている画像をデータURL（文字列）に一括変換
+                let imagesData = [];
+                if (stockedFiles.length > 0) {
+                    const readPromises = stockedFiles.map(file => {
+                        return new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.readAsDataURL(file);
+                        });
+                    });
+                    // 全部の変換が終わるのを待つ
+                    imagesData = await Promise.all(readPromises);
+                }
+
+                // 2. ペイロード作成
+                const payload = {
+                    text: text,
+                    images: imagesData,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                // 3. 暗号化・分割保存（変更なし）
+                const encryptedContent = encryptData(JSON.stringify(payload));
+                const BATCH_SIZE = 900000;
+                const totalLength = encryptedContent.length;
+                
+                const docRef = db.collection('users').doc(currentUser.uid).collection('memos').doc();
+                const batch = db.batch();
+
+                if (totalLength <= BATCH_SIZE) {
+                    batch.set(docRef, {
+                        content: encryptedContent,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        type: 'simple'
+                    });
+                } else {
+                    const chunks = [];
+                    for (let i = 0; i < totalLength; i += BATCH_SIZE) {
+                        chunks.push(encryptedContent.substring(i, i + BATCH_SIZE));
+                    }
+                    batch.set(docRef, {
+                        type: 'composite',
+                        count: chunks.length,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    chunks.forEach((chunk, index) => {
+                        const chunkRef = docRef.collection('chunks').doc(index.toString().padStart(3, '0'));
+                        batch.set(chunkRef, { data: chunk });
+                    });
+                }
+
+                await batch.commit();
+
+                // 4. 送信完了後のリセット
+                input.value = "";
+                stockedFiles = []; // ストックを空にする
+                updatePreview();   // プレビューを消す
+
+            } catch (e) {
+                console.error(e);
+                alert("送信エラー: " + e.message);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.style.opacity = "1";
+            }
         }
 
         function escapeHtml(str) {

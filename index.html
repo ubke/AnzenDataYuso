@@ -122,6 +122,21 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* --- 追加：時刻表示のスタイル --- */
+        .timestamp {
+            display: block;          /* 改行して配置 */
+            font-size: 10px;         /* 文字はかなり小さく */
+            color: rgba(0,0,0,0.5);  /* 薄い黒色 */
+            text-align: right;       /* 右寄せ */
+            margin-top: 4px;         /* 画像や文字との隙間 */
+            line-height: 1;          /* 行間を詰める */
+        }
+        
+        /* 画像だけの場合は、画像の上に重ならないように少し調整 */
+        .message .image-grid + .timestamp {
+            margin-top: 6px;
+        }
         
     </style>
 </head>
@@ -403,8 +418,12 @@
                             if (!payload) continue;
 
                             // 要素を作るだけ作って、バッファに入れる（まだ表示しない！）
-                            const div = createMessageElement(payload, doc.id);
-                            div.dataset.timestamp = data.createdAt ? data.createdAt.toMillis() : Date.now();
+                            
+                            // 時刻データを計算して、関数に渡す
+                            const ts = data.createdAt ? data.createdAt.toMillis() : Date.now();
+                            const div = createMessageElement(payload, doc.id, ts); // 第3引数(ts)を追加
+                            
+                            div.dataset.timestamp = ts;
                             
                             pendingElements.push(div);
                         }
@@ -514,10 +533,12 @@
                         } catch(e) {}
 
                         if (payload) {
-                            const div = createMessageElement(payload, doc.id);
-                            div.dataset.timestamp = doc.data().createdAt ? doc.data().createdAt.toMillis() : 0;
+                            // 時刻データを計算して、関数に渡す
+                            const ts = doc.data().createdAt ? doc.data().createdAt.toMillis() : 0;
+                            const div = createMessageElement(payload, doc.id, ts); // 第3引数(ts)を追加
                             
-                            // 過去ログは基本的に「一番上」に来るはずなので、関数に任せる
+                            div.dataset.timestamp = ts;
+                            
                             insertMessageInCorrectOrder(container, div);
                         }
                     }
@@ -533,14 +554,15 @@
             }
         }
 
-        // --- 画面表示（共通：要素を作るだけの関数） ---
-        function createMessageElement(payload, docId) {
+        // --- 画面表示（共通：要素を作るだけの関数・時刻対応版） ---
+        function createMessageElement(payload, docId, timestamp = null) {
             const div = document.createElement('div');
             div.className = 'message self';
             if (docId) div.id = docId;
 
             const images = payload.images || (payload.image ? [payload.image] : []);
             
+            // 画像の表示
             if (images.length > 0) {
                 const gridDiv = document.createElement('div');
                 gridDiv.className = 'image-grid';
@@ -551,6 +573,41 @@
                 });
                 div.appendChild(gridDiv);
             }
+
+            // テキストの表示
+            if (payload.text) {
+                const textDiv = document.createElement('div');
+                textDiv.innerText = payload.text;
+                div.appendChild(textDiv);
+            }
+
+            // 【追加】時刻の表示
+            if (timestamp) {
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'timestamp';
+                
+                // 日付オブジェクトに変換
+                const date = new Date(timestamp);
+                
+                // "15:05" のような形式にする
+                const hours = date.getHours().toString().padStart(2, '0');
+                const minutes = date.getMinutes().toString().padStart(2, '0');
+                
+                // もし「今日じゃない」なら日付もつける（例：1/23 15:05）
+                const today = new Date();
+                if (date.getDate() !== today.getDate() || date.getMonth() !== today.getMonth()) {
+                    const month = date.getMonth() + 1;
+                    const day = date.getDate();
+                    timeSpan.innerText = `${month}/${day} ${hours}:${minutes}`;
+                } else {
+                    timeSpan.innerText = `${hours}:${minutes}`;
+                }
+
+                div.appendChild(timeSpan);
+            }
+
+            return div;
+        }
 
             if (payload.text) {
                 const textDiv = document.createElement('div');

@@ -880,8 +880,8 @@
             if (input.files && input.files.length > 0) {
                 const files = Array.from(input.files);
                 
-                // 読み込み中を表示
-                alert(`${files.length}枚の画像を読み込んでいます...`);
+                // 【削除】ここにあった alert(...) を削除しました。
+                // これでポップアップは出ずに、裏側で静かに処理が進みます。
 
                 // 全てのファイルを読み込むまで待つ（Promise.all）
                 const readPromises = files.map(file => {
@@ -895,8 +895,6 @@
                 // 全ての画像データが揃ったら、まとめて送信！
                 const imagesData = await Promise.all(readPromises);
                 
-                // 第2引数に配列を渡す
-                // ※このあとsendMessageも修正する必要があります！
                 await sendMessage(null, imagesData); 
             }
             input.value = '';

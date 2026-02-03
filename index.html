@@ -285,17 +285,34 @@
 
         // 描画の競合を防ぐための「整理券番号」
         let latestRenderId = 0;
+        
+        // 過去ログ読み込み用の管理変数
+        let oldestDoc = null;      // 現在表示されている一番古いメッセージ
+        let isLoadingOld = false;  // 読み込み中かどうかのフラグ
 
-        // --- メッセージ読み込み（最新50件のみ取得・高速化版） ---
+        // --- メッセージ読み込み（最新10件＋無限スクロール対応版） ---
         function loadMessages() {
-            db.collection('users').doc(currentUser.uid).collection('memos')
-                .orderBy('createdAt', 'asc') // 古い順に並べるが...
-                .limitToLast(50)             // 【重要】最後の（最新の）50件だけを取得する制限
-                .onSnapshot(async (snapshot) => {
-                    const container = document.getElementById('chat-container');
-                    const changes = snapshot.docChanges();
+            const container = document.getElementById('chat-container');
 
-                    // 1つずつ順番に処理
+            // ★スクロール検知イベントを追加
+            container.addEventListener('scroll', async () => {
+                // 画面の一番上（scrollTopが0）に来て、かつ読み込み中でなければ
+                if (container.scrollTop === 0 && !isLoadingOld && oldestDoc) {
+                    await loadOlderMessages();
+                }
+            });
+
+            db.collection('users').doc(currentUser.uid).collection('memos')
+                .orderBy('createdAt', 'asc')
+                .limitToLast(10)  // 【変更】最初は10件だけにする（高速化）
+                .onSnapshot(async (snapshot) => {
+                    const changes = snapshot.docChanges();
+                    
+                    // 初回ロード時、一番古いドキュメントを記録しておく（ここから過去に遡るため）
+                    if (!oldestDoc && snapshot.docs.length > 0) {
+                        oldestDoc = snapshot.docs[0];
+                    }
+
                     for (const change of changes) {
                         if (change.type === "added") {
                             const doc = change.doc;
@@ -307,23 +324,20 @@
                             let encryptedString = "";
                             try {
                                 if (data.type === 'composite') {
-                                    // 分割データの結合
                                     const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
                                     encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
                                 } else {
-                                    // 通常データ
                                     encryptedString = data.content;
                                 }
 
                                 if (!encryptedString) continue;
 
-                                // 復号化
                                 const decryptedJSON = decryptData(encryptedString);
                                 if (!decryptedJSON) continue;
 
                                 const payload = JSON.parse(decryptedJSON);
 
-                                // 画面に追加
+                                // 通常のメッセージ表示（下に追加）
                                 renderMessage(payload, doc.id);
 
                             } catch (e) {
@@ -332,49 +346,115 @@
                         }
                     }
 
-                    // 読み込みが終わったら、即座に最新（一番下）を表示
-                    // 処理が軽くなったので、待ち時間はほぼ不要ですが念のため微調整
-                    setTimeout(() => {
-                        container.scrollTop = container.scrollHeight;
-                    }, 50);
+                    // 最新を表示（初回のみ）
+                    if (latestRenderId === 0) { // 簡易判定
+                        setTimeout(() => {
+                            container.scrollTop = container.scrollHeight;
+                        }, 100);
+                        latestRenderId = 1; 
+                    } else {
+                        // ユーザーが一番下にいる時だけ自動スクロール
+                        if (container.scrollHeight - container.scrollTop - container.clientHeight < 200) {
+                             container.scrollTop = container.scrollHeight;
+                        }
+                    }
                 });
         }
-        
-        // --- 画面表示（セット単位でのタイル表示版） ---
-        function renderMessage(payload, docId) {
+
+        // --- 【新機能】過去のメッセージを読み込む関数 ---
+        async function loadOlderMessages() {
+            if (isLoadingOld || !oldestDoc) return;
+            isLoadingOld = true;
+
             const container = document.getElementById('chat-container');
+            
+            // ロード前のスクロール位置と高さを覚えておく（ガクッとなるのを防ぐため）
+            const previousHeight = container.scrollHeight;
+            const previousTop = container.scrollTop;
+
+            try {
+                // oldestDoc よりも前のデータを10件取得
+                const snapshot = await db.collection('users').doc(currentUser.uid).collection('memos')
+                    .orderBy('createdAt', 'asc')
+                    .endBefore(oldestDoc)
+                    .limitToLast(10)
+                    .get();
+
+                if (!snapshot.empty) {
+                    // 新しい「一番古いドキュメント」を更新
+                    oldestDoc = snapshot.docs[0];
+
+                    // 取得したデータをHTMLにして、上に追加していくための箱
+                    const fragment = document.createDocumentFragment();
+
+                    // 順番通りに処理
+                    for (const doc of snapshot.docs) {
+                        const data = doc.data();
+                        let encryptedString = "";
+
+                        if (data.type === 'composite') {
+                            const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
+                            encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
+                        } else {
+                            encryptedString = data.content;
+                        }
+
+                        if (encryptedString) {
+                            const decryptedJSON = decryptData(encryptedString);
+                            if (decryptedJSON) {
+                                const payload = JSON.parse(decryptedJSON);
+                                // 要素を作成（表示はしない）
+                                const div = createMessageElement(payload, doc.id);
+                                fragment.appendChild(div);
+                            }
+                        }
+                    }
+
+                    // まとめて画面の一番上に挿入
+                    container.insertBefore(fragment, container.firstChild);
+
+                    // スクロール位置を調整（見た目が変わらないようにする）
+                    const newHeight = container.scrollHeight;
+                    container.scrollTop = newHeight - previousHeight;
+                }
+            } catch (e) {
+                console.error("過去ログ読み込みエラー:", e);
+            } finally {
+                isLoadingOld = false;
+            }
+        }
+
+        // --- 画面表示（共通：要素を作るだけの関数） ---
+        function createMessageElement(payload, docId) {
             const div = document.createElement('div');
             div.className = 'message self';
             if (docId) div.id = docId;
 
-            // 画像データの取り出し（新旧両方のデータ形式に対応）
             const images = payload.images || (payload.image ? [payload.image] : []);
             
-            let html = "";
-
-            // 画像がある場合
             if (images.length > 0) {
-                // グリッドコンテナを作成（data-count属性でCSSを切り替える）
                 const gridDiv = document.createElement('div');
                 gridDiv.className = 'image-grid';
                 gridDiv.setAttribute('data-count', images.length);
-
-                // 画像を1枚ずつ生成してグリッドに入れる
                 images.forEach(src => {
                     const el = createMediaElement(src);
                     gridDiv.appendChild(el);
                 });
-
                 div.appendChild(gridDiv);
             }
 
-            // テキストがある場合
             if (payload.text) {
                 const textDiv = document.createElement('div');
-                textDiv.innerText = payload.text; // 安全のためinnerTextを使用
+                textDiv.innerText = payload.text;
                 div.appendChild(textDiv);
             }
+            return div;
+        }
 
+        // --- 画面表示（通常用：下に追加する） ---
+        function renderMessage(payload, docId) {
+            const container = document.getElementById('chat-container');
+            const div = createMessageElement(payload, docId);
             container.appendChild(div);
         }
 

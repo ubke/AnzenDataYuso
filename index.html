@@ -22,8 +22,51 @@
         /* チャットエリア */
         #chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
         
-        .message { max-width: 80%; padding: 10px 15px; border-radius: 15px; font-size: 16px; line-height: 1.4; position: relative; word-break: break-all; }
-        .message.self { align-self: flex-end; background-color: var(--msg-bg-me); color: var(--text-color); border-bottom-right-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        /* --- メッセージのレイアウト（LINE風：横並び） --- */
+        /* 1つのメッセージの行（時間＋吹き出しを横に並べる） */
+        .message-row {
+            display: flex;
+            justify-content: flex-end; /* 右寄せ */
+            align-items: flex-end;     /* 下揃え */
+            margin-bottom: 10px;       /* 次のメッセージとの間隔 */
+            width: 100%;
+        }
+
+        /* 吹き出し本体 */
+        .message-bubble {
+            max-width: 70%;            /* 吹き出しの最大幅（少し狭める） */
+            padding: 10px 15px;
+            border-radius: 15px;
+            font-size: 16px;
+            line-height: 1.4;
+            position: relative;
+            word-break: break-all;
+            
+            /* 緑色のスタイル */
+            background-color: var(--msg-bg-me);
+            color: var(--text-color);
+            border-bottom-right-radius: 2px; /* 右下の角だけ尖らせる */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        /* 画像のスタイル調整 */
+        .message-bubble img { 
+            max-width: 100%; 
+            border-radius: 10px; 
+            display: block; 
+            cursor: pointer; 
+        }
+
+        /* 時刻表示（吹き出しの左・外側に配置） */
+        .timestamp {
+            font-size: 10px;
+            color: rgba(0,0,0,0.6);
+            margin-right: 6px;  /* 吹き出しとの隙間 */
+            margin-bottom: 2px; /* 下端の微調整 */
+            flex-shrink: 0;     /* 時間が潰れないようにする */
+            white-space: nowrap; /* 改行させない */
+        }
+        
         .message img { max-width: 100%; border-radius: 10px; display: block; margin-top: 5px; cursor: pointer; }
         
         /* 入力エリア */
@@ -554,11 +597,37 @@
             }
         }
 
-        // --- 画面表示（共通：要素を作るだけの関数・時刻対応版） ---
+        // --- 画面表示（共通：要素を作るだけの関数・時刻外出し版） ---
         function createMessageElement(payload, docId, timestamp = null) {
-            const div = document.createElement('div');
-            div.className = 'message self';
-            if (docId) div.id = docId;
+            // 1. 全体を包む「行」を作る
+            const row = document.createElement('div');
+            row.className = 'message-row';
+            if (docId) row.id = docId;
+
+            // 2. 時刻を作る（左側に置くため、先に追加する）
+            if (timestamp) {
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'timestamp';
+                
+                const date = new Date(timestamp);
+                const hours = date.getHours().toString().padStart(2, '0');
+                const minutes = date.getMinutes().toString().padStart(2, '0');
+                
+                const today = new Date();
+                if (date.getDate() !== today.getDate() || date.getMonth() !== today.getMonth()) {
+                    const month = date.getMonth() + 1;
+                    const day = date.getDate();
+                    timeSpan.innerText = `${month}/${day} ${hours}:${minutes}`;
+                } else {
+                    timeSpan.innerText = `${hours}:${minutes}`;
+                }
+                
+                row.appendChild(timeSpan);
+            }
+
+            // 3. 吹き出し（バブル）を作る
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble'; // 新しいクラス名
 
             const images = payload.images || (payload.image ? [payload.image] : []);
             
@@ -571,42 +640,22 @@
                     const el = createMediaElement(src);
                     gridDiv.appendChild(el);
                 });
-                div.appendChild(gridDiv);
+                bubble.appendChild(gridDiv);
             }
 
             // テキストの表示
             if (payload.text) {
                 const textDiv = document.createElement('div');
                 textDiv.innerText = payload.text;
-                div.appendChild(textDiv);
+                // 画像がある場合は少し隙間を空ける
+                if (images.length > 0) textDiv.style.marginTop = "5px";
+                bubble.appendChild(textDiv);
             }
 
-            // 【追加】時刻の表示
-            if (timestamp) {
-                const timeSpan = document.createElement('span');
-                timeSpan.className = 'timestamp';
-                
-                // 日付オブジェクトに変換
-                const date = new Date(timestamp);
-                
-                // "15:05" のような形式にする
-                const hours = date.getHours().toString().padStart(2, '0');
-                const minutes = date.getMinutes().toString().padStart(2, '0');
-                
-                // もし「今日じゃない」なら日付もつける（例：1/23 15:05）
-                const today = new Date();
-                if (date.getDate() !== today.getDate() || date.getMonth() !== today.getMonth()) {
-                    const month = date.getMonth() + 1;
-                    const day = date.getDate();
-                    timeSpan.innerText = `${month}/${day} ${hours}:${minutes}`;
-                } else {
-                    timeSpan.innerText = `${hours}:${minutes}`;
-                }
+            // 4. 吹き出しを行に追加
+            row.appendChild(bubble);
 
-                div.appendChild(timeSpan);
-            }
-
-            return div;
+            return row; // 行ごと返す
         }
 
         // （共通部品）画像・動画タグを作る関数（クリック拡大対応版）

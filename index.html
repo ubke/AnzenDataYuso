@@ -609,14 +609,6 @@
             return div;
         }
 
-            if (payload.text) {
-                const textDiv = document.createElement('div');
-                textDiv.innerText = payload.text;
-                div.appendChild(textDiv);
-            }
-            return div;
-        }
-
         // （共通部品）画像・動画タグを作る関数（クリック拡大対応版）
         function createMediaElement(src) {
             if (src.startsWith('data:video')) {

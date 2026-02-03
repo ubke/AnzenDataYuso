@@ -744,15 +744,28 @@
         function openModal(src) {
             img.src = src;
             modal.style.display = 'flex';
+            
             // 初期化
             state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0 };
             updateTransform();
+
+            // ★【追加】履歴に「画像を開いた」という状態を追加
+            // これにより、スマホの「戻る」操作がこの履歴を消す動作になります
+            history.pushState({ modalOpen: true }, null, null);
         }
 
-        // モーダルを閉じる
+        // モーダルを閉じる（左上の矢印ボタン用）
         function closeModal() {
-            modal.style.display = 'none';
+            // 矢印ボタンが押されたら、ブラウザの「戻る」機能を発動させる
+            // → これが下の 'popstate' イベントを呼び出し、そこで画面が閉じられます
+            history.back();
         }
+
+        // ★【追加】ブラウザの「戻る（スワイプ/ボタン）」を検知して閉じる処理
+        window.addEventListener('popstate', () => {
+            // 履歴が戻ったので、画面を非表示にする
+            modal.style.display = 'none';
+        });
 
         function updateTransform() {
             img.style.transform = `translate(${state.pointX}px, ${state.pointY}px) scale(${state.scale})`;
@@ -774,7 +787,6 @@
             } else if (e.touches.length === 1) {
                 // パン（移動）開始
                 state.panning = true;
-                // 現在位置からの差分を記録
                 state.startX = e.touches[0].clientX - state.pointX;
                 state.startY = e.touches[0].clientY - state.pointY;
             }
@@ -790,16 +802,14 @@
                 const dist = getDistance(e.touches[0], e.touches[1]);
                 let newScale = startScale * (dist / startDist);
                 
-                // 【修正ポイント】
-                // 拡大率が1.1倍を下回ったら、もう「1倍（元のサイズ）」とみなして
-                // 強制的に位置を中央(0,0)に戻す吸着処理を入れる
+                // 中央吸着ロジック
                 if (newScale < 1.1) {
                     newScale = 1;
                     state.pointX = 0;
                     state.pointY = 0;
                 }
 
-                // 最大拡大率の制限（5倍）
+                // 最大拡大率
                 if (newScale > 5) newScale = 5;
 
                 state.scale = newScale;
@@ -807,8 +817,6 @@
 
             } else if (e.touches.length === 1 && state.panning && state.scale > 1) {
                 // --- 移動操作中 ---
-                // 拡大している時（scale > 1）だけ移動可能にする
-                
                 state.pointX = e.touches[0].clientX - state.startX;
                 state.pointY = e.touches[0].clientY - state.startY;
                 updateTransform();
@@ -822,8 +830,7 @@
             if (e.touches.length === 0) {
                 state.panning = false;
                 
-                // 指を離した瞬間に、もし微妙に拡大されていたり（1.1倍未満）、
-                // 縮小されすぎていたら、パッと元のサイズ・中央位置にリセットする
+                // 指を離した瞬間の吸着チェック
                 if (state.scale < 1.1) {
                     state.scale = 1;
                     state.pointX = 0;
@@ -833,7 +840,7 @@
             }
         });
         
-        // 【重要】クリックイベントの防波堤
+        // クリックイベントの防波堤
         modal.addEventListener('click', (e) => {
             e.stopPropagation();
         });

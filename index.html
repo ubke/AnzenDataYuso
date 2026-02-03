@@ -180,7 +180,7 @@
         .message .image-grid + .timestamp {
             margin-top: 6px;
         }
-
+        
         /* モーダル内の画像にタッチ操作の設定を追加 */
         #modal-img {
             /* 既存のスタイル */
@@ -213,6 +213,11 @@
         /* ボタンを押した時のリアクション */
         #modal-back-btn:active {
             background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 背景の黒い幕に対する設定（裏側への貫通防止） */
+        #image-modal {
+            touch-action: none;
         }
         
     </style>
@@ -757,28 +762,32 @@
         let startDist = 0;
         let startScale = 1;
 
-        modal.addEventListener('touchend', (e) => {
-            // 指が離れた時
-            if (e.touches.length === 0) {
-                state.panning = false;
-                
-                // 【変更】
-                // ここにあった「if (state.scale === 1) closeModal();」を削除しました。
-                // これにより、画面をタップしても勝手に閉じなくなります。
-                // 閉じる手段は「左上の矢印ボタン」のみになります。
+        modal.addEventListener('touchstart', (e) => {
+            // 裏側へのイベント伝播を止める
+            e.stopPropagation(); 
+
+            if (e.touches.length === 2) {
+                // ピンチ（ズーム）開始
+                e.preventDefault();
+                startDist = getDistance(e.touches[0], e.touches[1]);
+                startScale = state.scale;
+            } else if (e.touches.length === 1) {
+                // パン（移動）開始
+                state.panning = true;
+                state.startX = e.touches[0].clientX - state.pointX;
+                state.startY = e.touches[0].clientY - state.pointY;
             }
         });
 
         modal.addEventListener('touchmove', (e) => {
             e.preventDefault(); // 画面スクロール防止
+            e.stopPropagation(); // 裏側への伝播防止
 
             if (e.touches.length === 2) {
                 // ピンチ中
                 const dist = getDistance(e.touches[0], e.touches[1]);
-                // 開始時の倍率 × (今の距離 ÷ 開始時の距離)
                 let newScale = startScale * (dist / startDist);
                 
-                // 制限（1倍〜5倍）
                 if (newScale < 1) newScale = 1;
                 if (newScale > 5) newScale = 5;
 
@@ -786,7 +795,7 @@
                 updateTransform();
 
             } else if (e.touches.length === 1 && state.panning && state.scale > 1) {
-                // 移動中（拡大している時のみ）
+                // 移動中
                 state.pointX = e.touches[0].clientX - state.startX;
                 state.pointY = e.touches[0].clientY - state.startY;
                 updateTransform();
@@ -794,16 +803,17 @@
         });
 
         modal.addEventListener('touchend', (e) => {
-            // 指が離れた時
+            e.stopPropagation(); // 裏側への伝播防止
+            
             if (e.touches.length === 0) {
                 state.panning = false;
-                
-                // 拡大していない状態でタップ（移動量がほぼ0）なら閉じる
-                // ※タップ判定：touchend発生時にスケールが1なら閉じる
-                if (state.scale === 1) {
-                    closeModal();
-                }
             }
+        });
+        
+        // 【重要】クリックイベントの防波堤
+        // これを追加することで、モーダル上のタップが裏の画像に届くのを完全に防ぎます
+        modal.addEventListener('click', (e) => {
+            e.stopPropagation();
         });
         
         // 補助関数：2点間の距離

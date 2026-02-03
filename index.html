@@ -505,12 +505,11 @@
         let oldestDoc = null;      // 読み込んだ中で一番古いデータ
         let isLoadingOld = false;  // 読み込み中フラグ
 
-        // --- メッセージ読み込み（一括表示＆ロード画面対応版） ---
+        // --- メッセージ読み込み（3件ずつ読み込み・画面埋め合わせ対応版） ---
         function loadMessages() {
             const container = document.getElementById('chat-container');
             const loadingScreen = document.getElementById('loading-screen');
 
-            // ★読み込み開始時にロード画面を表示
             loadingScreen.style.display = 'flex';
 
             container.addEventListener('scroll', async () => {
@@ -524,8 +523,6 @@
                 .limit(3)
                 .onSnapshot(async (snapshot) => {
                     const changes = snapshot.docChanges();
-                    
-                    // 今回の更新分を貯めておくバッファ（まだ画面には出しません）
                     const pendingElements = [];
 
                     if (snapshot.docs.length > 0) {
@@ -535,12 +532,10 @@
                         }
                     }
 
-                    // 1. まずは裏ですべてのデータを処理・復号化する
                     for (const change of changes) {
                         if (change.type === "added") {
                             const doc = change.doc;
                             const data = doc.data();
-
                             if (document.getElementById(doc.id)) continue;
 
                             let payload = null;
@@ -552,12 +547,9 @@
                                 } else {
                                     encryptedString = data.content;
                                 }
-
                                 if (encryptedString) {
                                     const decryptedJSON = decryptData(encryptedString);
-                                    if (decryptedJSON) {
-                                        payload = JSON.parse(decryptedJSON);
-                                    }
+                                    if (decryptedJSON) payload = JSON.parse(decryptedJSON);
                                 }
                             } catch (e) {
                                 console.log("読み込みエラー:", e);
@@ -566,34 +558,32 @@
 
                             if (!payload) continue;
 
-                            // 要素を作るだけ作って、バッファに入れる（まだ表示しない！）
-                            
-                            // 時刻データを計算して、関数に渡す
                             const ts = data.createdAt ? data.createdAt.toMillis() : Date.now();
-                            const div = createMessageElement(payload, doc.id, ts); // 第3引数(ts)を追加
-                            
+                            const div = createMessageElement(payload, doc.id, ts);
                             div.dataset.timestamp = ts;
-                            
                             pendingElements.push(div);
                         }
                     }
 
-                    // 2. 準備ができたら、バッファの中身を一気に画面に追加する
                     if (pendingElements.length > 0) {
                         pendingElements.forEach(div => {
                             insertMessageInCorrectOrder(container, div);
                         });
                     }
 
-                    // 3. 初回ロード時（ロード画面が出ている時）の仕上げ
                     if (loadingScreen.style.display !== 'none') {
-                        // 一番下までスクロール
                         container.scrollTop = container.scrollHeight;
                         
-                        // 少しだけ待ってから（画像の描画待ちなど）ロード画面を消す
                         setTimeout(() => {
                             loadingScreen.style.display = 'none';
-                        }, 500); // 0.5秒余韻を持たせる（お好みで調整可）
+                            
+                            // 【★修正点】
+                            // ロード画面を消した後、もしスクロールバーが出ていなければ（画面が埋まってなければ）
+                            // 強制的に過去ログを読み込みに行く
+                            if (container.scrollHeight <= container.clientHeight && oldestDoc) {
+                                loadOlderMessages();
+                            }
+                        }, 500);
                         
                         latestRenderId = 1;
                     }
@@ -642,20 +632,20 @@
             container.insertBefore(newDiv, container.firstChild);
         }
 
-        // --- 過去のメッセージを読み込む関数 ---
+        // --- 過去のメッセージを読み込む関数（2件ずつ・再帰的埋め合わせ対応版） ---
         async function loadOlderMessages() {
             if (isLoadingOld || !oldestDoc) return;
             isLoadingOld = true;
 
             const container = document.getElementById('chat-container');
-            const previousHeight = container.scrollHeight; // ロード前の高さを記録
+            const previousHeight = container.scrollHeight; 
 
             try {
-                // oldestDoc よりさらに古いデータを10件取得
+                // oldestDoc よりさらに古いデータを2件取得
                 const snapshot = await db.collection('users').doc(currentUser.uid).collection('memos')
                     .orderBy('createdAt', 'desc')
                     .startAfter(oldestDoc)
-                    .limit(3)
+                    .limit(2) // 【変更】ここを3から2に変更しました
                     .get();
 
                 if (!snapshot.empty) {
@@ -664,7 +654,6 @@
                     for (const doc of snapshot.docs) {
                         if (document.getElementById(doc.id)) continue;
 
-                        // データの復元（省略なし）
                         let payload = null;
                         try {
                             const data = doc.data();
@@ -682,24 +671,25 @@
                         } catch(e) {}
 
                         if (payload) {
-                            // 時刻データを計算して、関数に渡す
                             const ts = doc.data().createdAt ? doc.data().createdAt.toMillis() : 0;
-                            const div = createMessageElement(payload, doc.id, ts); // 第3引数(ts)を追加
-                            
+                            const div = createMessageElement(payload, doc.id, ts);
                             div.dataset.timestamp = ts;
-                            
                             insertMessageInCorrectOrder(container, div);
                         }
                     }
 
-                    // スクロール位置の維持（ガクッとなるのを防ぐ）
-                    // 新しく増えた高さの分だけスクロール位置をずらす
                     container.scrollTop = container.scrollHeight - previousHeight;
                 }
             } catch (e) {
                 console.error("過去ログ読み込みエラー:", e);
             } finally {
                 isLoadingOld = false;
+
+                // 読み込みが終わった後、まだ画面の高さに足りずスクロールバーが出ていないなら
+                // さらにもう2件読み込みに行く（スクロールバーが出るまで繰り返す）
+                if (container.scrollHeight <= container.clientHeight && oldestDoc) {
+                    loadOlderMessages();
+                }
             }
         }
 

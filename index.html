@@ -304,7 +304,7 @@
             // 【重要】「新しい順」にデータを取得します
             db.collection('users').doc(currentUser.uid).collection('memos')
                 .orderBy('createdAt', 'desc') 
-                .limit(10) 
+                .limit(5) 
                 .onSnapshot(async (snapshot) => {
                     const changes = snapshot.docChanges();
                     
@@ -423,7 +423,7 @@
                 const snapshot = await db.collection('users').doc(currentUser.uid).collection('memos')
                     .orderBy('createdAt', 'desc')
                     .startAfter(oldestDoc)
-                    .limit(10)
+                    .limit(5)
                     .get();
 
                 if (!snapshot.empty) {

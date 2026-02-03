@@ -287,30 +287,34 @@
         let latestRenderId = 0;
         
         // 過去ログ読み込み用の管理変数
-        let oldestDoc = null;      // 現在表示されている一番古いメッセージ
-        let isLoadingOld = false;  // 読み込み中かどうかのフラグ
+        let oldestDoc = null;      // 読み込んだ中で一番古いデータ
+        let isLoadingOld = false;  // 読み込み中フラグ
 
-        // --- メッセージ読み込み（最新10件＋無限スクロール対応版） ---
+        // --- メッセージ読み込み（最新順に取得し、LINE風に配置する版） ---
         function loadMessages() {
             const container = document.getElementById('chat-container');
 
-            // ★スクロール検知イベントを追加
+            // ★スクロール検知（一番上に行ったら過去ログを読み込む）
             container.addEventListener('scroll', async () => {
-                // 画面の一番上（scrollTopが0）に来て、かつ読み込み中でなければ
                 if (container.scrollTop === 0 && !isLoadingOld && oldestDoc) {
                     await loadOlderMessages();
                 }
             });
 
+            // 【重要】「新しい順」にデータを取得します
             db.collection('users').doc(currentUser.uid).collection('memos')
-                .orderBy('createdAt', 'asc')
-                .limitToLast(10)  // 【変更】最初は10件だけにする（高速化）
+                .orderBy('createdAt', 'desc') 
+                .limit(10) 
                 .onSnapshot(async (snapshot) => {
                     const changes = snapshot.docChanges();
                     
-                    // 初回ロード時、一番古いドキュメントを記録しておく（ここから過去に遡るため）
-                    if (!oldestDoc && snapshot.docs.length > 0) {
-                        oldestDoc = snapshot.docs[0];
+                    // 初回ロード時、取得した中で一番古い（＝リストの最後にある）ドキュメントを記録
+                    if (snapshot.docs.length > 0) {
+                        // desc順なので、配列の最後が一番古いデータになります
+                        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+                        if (!oldestDoc || lastDoc.data().createdAt < oldestDoc.data().createdAt) {
+                            oldestDoc = lastDoc;
+                        }
                     }
 
                     for (const change of changes) {
@@ -318,11 +322,12 @@
                             const doc = change.doc;
                             const data = doc.data();
 
-                            // すでに表示済みならスキップ
                             if (document.getElementById(doc.id)) continue;
 
-                            let encryptedString = "";
+                            // データの復元処理
+                            let payload = null;
                             try {
+                                let encryptedString = "";
                                 if (data.type === 'composite') {
                                     const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
                                     encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
@@ -330,92 +335,132 @@
                                     encryptedString = data.content;
                                 }
 
-                                if (!encryptedString) continue;
-
-                                const decryptedJSON = decryptData(encryptedString);
-                                if (!decryptedJSON) continue;
-
-                                const payload = JSON.parse(decryptedJSON);
-
-                                // 通常のメッセージ表示（下に追加）
-                                renderMessage(payload, doc.id);
-
+                                if (encryptedString) {
+                                    const decryptedJSON = decryptData(encryptedString);
+                                    if (decryptedJSON) {
+                                        payload = JSON.parse(decryptedJSON);
+                                    }
+                                }
                             } catch (e) {
                                 console.log("読み込みエラー:", e);
+                                continue;
                             }
+
+                            if (!payload) continue;
+
+                            // 要素を作成
+                            const div = createMessageElement(payload, doc.id);
+                            // タイムスタンプを要素に埋め込んでおく（並び替え比較用）
+                            div.dataset.timestamp = data.createdAt ? data.createdAt.toMillis() : Date.now();
+
+                            // 【重要】正しい位置に挿入するロジック
+                            insertMessageInCorrectOrder(container, div);
                         }
                     }
 
-                    // 最新を表示（初回のみ）
-                    if (latestRenderId === 0) { // 簡易判定
+                    // 初回読み込み時は、一番下（最新）にスクロールする
+                    if (latestRenderId === 0) {
                         setTimeout(() => {
                             container.scrollTop = container.scrollHeight;
-                        }, 100);
+                        }, 50);
                         latestRenderId = 1; 
-                    } else {
-                        // ユーザーが一番下にいる時だけ自動スクロール
-                        if (container.scrollHeight - container.scrollTop - container.clientHeight < 200) {
-                             container.scrollTop = container.scrollHeight;
-                        }
                     }
                 });
         }
 
-        // --- 【新機能】過去のメッセージを読み込む関数 ---
+        // --- 賢い挿入関数（日付を見て正しい場所に挟み込む） ---
+        function insertMessageInCorrectOrder(container, newDiv) {
+            const newTime = parseInt(newDiv.dataset.timestamp);
+            const children = Array.from(container.children);
+
+            // 1. コンテナが空ならそのまま追加
+            if (children.length === 0) {
+                container.appendChild(newDiv);
+                return;
+            }
+
+            // 2. 一番下のメッセージ（最新）よりさらに新しいなら、一番下に追加
+            const lastDiv = children[children.length - 1];
+            if (newTime >= parseInt(lastDiv.dataset.timestamp)) {
+                container.appendChild(newDiv);
+                return;
+            }
+
+            // 3. 一番上のメッセージ（最古）より古いなら、一番上に追加
+            const firstDiv = children[0];
+            if (newTime <= parseInt(firstDiv.dataset.timestamp)) {
+                container.insertBefore(newDiv, firstDiv);
+                return;
+            }
+
+            // 4. それ以外（中間）の場合：下から順番に探して、自分より古いメッセージのすぐ上に挟む
+            // （descで取得しているので、基本的には「上へ上へ」と追加されることが多いです）
+            for (let i = children.length - 1; i >= 0; i--) {
+                const child = children[i];
+                const childTime = parseInt(child.dataset.timestamp);
+                
+                if (newTime > childTime) {
+                    // 見つけた「自分より古いメッセージ」の「次（下）」に挿入したかったが...
+                    // insertBeforeは「前」に入れる関数なので、i+1（自分より新しいメッセージ）の前に入れる
+                    container.insertBefore(newDiv, children[i + 1]);
+                    return;
+                }
+            }
+            // ここに来ることは稀だが、念のため一番上へ
+            container.insertBefore(newDiv, container.firstChild);
+        }
+
+        // --- 過去のメッセージを読み込む関数 ---
         async function loadOlderMessages() {
             if (isLoadingOld || !oldestDoc) return;
             isLoadingOld = true;
 
             const container = document.getElementById('chat-container');
-            
-            // ロード前のスクロール位置と高さを覚えておく（ガクッとなるのを防ぐため）
-            const previousHeight = container.scrollHeight;
-            const previousTop = container.scrollTop;
+            const previousHeight = container.scrollHeight; // ロード前の高さを記録
 
             try {
-                // oldestDoc よりも前のデータを10件取得
+                // oldestDoc よりさらに古いデータを10件取得
                 const snapshot = await db.collection('users').doc(currentUser.uid).collection('memos')
-                    .orderBy('createdAt', 'asc')
-                    .endBefore(oldestDoc)
-                    .limitToLast(10)
+                    .orderBy('createdAt', 'desc')
+                    .startAfter(oldestDoc)
+                    .limit(10)
                     .get();
 
                 if (!snapshot.empty) {
-                    // 新しい「一番古いドキュメント」を更新
-                    oldestDoc = snapshot.docs[0];
+                    oldestDoc = snapshot.docs[snapshot.docs.length - 1];
 
-                    // 取得したデータをHTMLにして、上に追加していくための箱
-                    const fragment = document.createDocumentFragment();
-
-                    // 順番通りに処理
                     for (const doc of snapshot.docs) {
-                        const data = doc.data();
-                        let encryptedString = "";
+                        if (document.getElementById(doc.id)) continue;
 
-                        if (data.type === 'composite') {
-                            const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
-                            encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
-                        } else {
-                            encryptedString = data.content;
-                        }
-
-                        if (encryptedString) {
-                            const decryptedJSON = decryptData(encryptedString);
-                            if (decryptedJSON) {
-                                const payload = JSON.parse(decryptedJSON);
-                                // 要素を作成（表示はしない）
-                                const div = createMessageElement(payload, doc.id);
-                                fragment.appendChild(div);
+                        // データの復元（省略なし）
+                        let payload = null;
+                        try {
+                            const data = doc.data();
+                            let encryptedString = "";
+                            if (data.type === 'composite') {
+                                const chunksSnapshot = await doc.ref.collection('chunks').orderBy(firebase.firestore.FieldPath.documentId()).get();
+                                encryptedString = chunksSnapshot.docs.map(d => d.data().data).join('');
+                            } else {
+                                encryptedString = data.content;
                             }
+                            if (encryptedString) {
+                                const decryptedJSON = decryptData(encryptedString);
+                                if (decryptedJSON) payload = JSON.parse(decryptedJSON);
+                            }
+                        } catch(e) {}
+
+                        if (payload) {
+                            const div = createMessageElement(payload, doc.id);
+                            div.dataset.timestamp = doc.data().createdAt ? doc.data().createdAt.toMillis() : 0;
+                            
+                            // 過去ログは基本的に「一番上」に来るはずなので、関数に任せる
+                            insertMessageInCorrectOrder(container, div);
                         }
                     }
 
-                    // まとめて画面の一番上に挿入
-                    container.insertBefore(fragment, container.firstChild);
-
-                    // スクロール位置を調整（見た目が変わらないようにする）
-                    const newHeight = container.scrollHeight;
-                    container.scrollTop = newHeight - previousHeight;
+                    // スクロール位置の維持（ガクッとなるのを防ぐ）
+                    // 新しく増えた高さの分だけスクロール位置をずらす
+                    container.scrollTop = container.scrollHeight - previousHeight;
                 }
             } catch (e) {
                 console.error("過去ログ読み込みエラー:", e);
@@ -451,11 +496,9 @@
             return div;
         }
 
-        // --- 画面表示（通常用：下に追加する） ---
+        // --- （旧 renderMessage は不要になったので削除または空にする） ---
         function renderMessage(payload, docId) {
-            const container = document.getElementById('chat-container');
-            const div = createMessageElement(payload, docId);
-            container.appendChild(div);
+             // 使わない
         }
 
         // （共通部品）画像・動画タグを作る関数（クリック拡大対応版）

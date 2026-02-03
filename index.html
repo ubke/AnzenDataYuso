@@ -816,24 +816,53 @@
             return row; // 行ごと返す
         }
 
-        // （共通部品）画像・動画タグを作る関数（クリック拡大対応版）
+        // （共通部品）画像・動画タグを作る関数（クリック拡大・長押し保存対応版）
         function createMediaElement(src) {
             if (src.startsWith('data:video')) {
                 const video = document.createElement('video');
                 video.src = src;
                 video.controls = true;
-                // 動画はプレーヤーの機能で全画面にできるので、ここでの処理は不要
                 return video;
             } else {
                 const img = document.createElement('img');
                 img.src = src;
-                img.style.cursor = "pointer"; // クリックできることをカーソルで示す
+                img.style.cursor = "pointer";
                 
-                // 【追加】画像がクリックされたら拡大関数を呼ぶ
+                // --- サムネイルの長押し判定 ---
+                let thumbTimer = null;
+
+                img.addEventListener('touchstart', (e) => {
+                    // 長押しタイマー開始 (600ms)
+                    thumbTimer = setTimeout(() => {
+                        openContextMenu(src); // メニューを開く
+                        thumbTimer = null;    // タイマーリセット
+                    }, 600);
+                });
+
+                img.addEventListener('touchmove', () => {
+                    // 指が動いたらキャンセル（スクロール時はメニューを出さない）
+                    if (thumbTimer) {
+                        clearTimeout(thumbTimer);
+                        thumbTimer = null;
+                    }
+                });
+
+                img.addEventListener('touchend', () => {
+                    // 指を離したらキャンセル
+                    if (thumbTimer) {
+                        clearTimeout(thumbTimer);
+                        thumbTimer = null;
+                    }
+                });
+                
+                // --- クリックで拡大 ---
                 img.onclick = function(e) {
-                    // 親要素へのイベント伝播（バグの元）を防ぐ
-                    e.stopPropagation(); 
-                    openModal(src);
+                    e.stopPropagation();
+                    // メニューが開いていない時だけ拡大する
+                    // (長押し成立時はメニューが出るので、ここはスルーさせる意図)
+                    if (document.getElementById('context-menu').style.display !== 'flex') {
+                        openModal(src);
+                    }
                 };
                 return img;
             }
@@ -896,10 +925,9 @@
             e.stopPropagation();
 
             if (e.touches.length === 2) {
-                // 指が2本あるなら長押し判定は中止
+                // 指が2本なら長押し判定中止
                 clearTimeout(longPressTimer);
                 
-                // ピンチ（ズーム）開始
                 e.preventDefault();
                 startDist = getDistance(e.touches[0], e.touches[1]);
                 startScale = state.scale;
@@ -909,11 +937,10 @@
                 state.startX = e.touches[0].clientX - state.pointX;
                 state.startY = e.touches[0].clientY - state.pointY;
 
-                // ★【追加】長押しタイマーを開始 (600ミリ秒で発動)
+                // 長押しタイマーを開始
                 longPressTimer = setTimeout(() => {
-                    // 指が動いていなければメニューを表示
-                    openContextMenu();
-                    // ドラッグ状態を解除して、画面が動かないようにする
+                    // ★修正：現在の拡大画像のsrcを渡す
+                    openContextMenu(img.src); 
                     state.panning = false;
                 }, 600);
             }
@@ -990,24 +1017,32 @@
         }
 
         // --- 長押しメニューの制御 ---
-        function openContextMenu() {
-            // バイブレーション（Androidのみ対応、iOSは無視されます）
-            if (navigator.vibrate) navigator.vibrate(50);
+        
+        let targetDownloadSrc = ""; // 保存対象の画像を記憶する変数
+
+        function openContextMenu(src) {
+            // 保存する画像のURLをセット
+            targetDownloadSrc = src;
+            
+            // 【削除】navigator.vibrate(50); を削除しました（振動なし）
+            
             document.getElementById('context-menu').style.display = 'flex';
         }
 
         function closeContextMenu() {
             document.getElementById('context-menu').style.display = 'none';
+            targetDownloadSrc = ""; // リセット
         }
 
         function downloadImage() {
-            const img = document.getElementById('modal-img');
+            if (!targetDownloadSrc) return;
+
             const link = document.createElement('a');
             
             // 現在の時間をファイル名にする
             const timestamp = new Date().getTime();
-            link.href = img.src;
-            link.download = `image_${timestamp}.png`;
+            link.href = targetDownloadSrc;
+            link.download = `image_${timestamp}.png`; // 拡張子は適宜
             
             document.body.appendChild(link);
             link.click();
@@ -1015,7 +1050,6 @@
             
             closeContextMenu();
         }
-
         // --- 自動ログイン監視機能 ---
         // ページを開いた時、以前のログイン状態が残っているかチェックします
         auth.onAuthStateChanged((user) => {

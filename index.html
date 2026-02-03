@@ -762,9 +762,9 @@
         let startDist = 0;
         let startScale = 1;
 
+        // 1. タッチ開始
         modal.addEventListener('touchstart', (e) => {
-            // 裏側へのイベント伝播を止める
-            e.stopPropagation(); 
+            e.stopPropagation(); // 裏側への伝播防止
 
             if (e.touches.length === 2) {
                 // ピンチ（ズーム）開始
@@ -774,44 +774,66 @@
             } else if (e.touches.length === 1) {
                 // パン（移動）開始
                 state.panning = true;
+                // 現在位置からの差分を記録
                 state.startX = e.touches[0].clientX - state.pointX;
                 state.startY = e.touches[0].clientY - state.pointY;
             }
         });
 
+        // 2. 指を動かしている時
         modal.addEventListener('touchmove', (e) => {
             e.preventDefault(); // 画面スクロール防止
-            e.stopPropagation(); // 裏側への伝播防止
+            e.stopPropagation();
 
             if (e.touches.length === 2) {
-                // ピンチ中
+                // --- ピンチ操作中 ---
                 const dist = getDistance(e.touches[0], e.touches[1]);
                 let newScale = startScale * (dist / startDist);
                 
-                if (newScale < 1) newScale = 1;
+                // 【修正ポイント】
+                // 拡大率が1.1倍を下回ったら、もう「1倍（元のサイズ）」とみなして
+                // 強制的に位置を中央(0,0)に戻す吸着処理を入れる
+                if (newScale < 1.1) {
+                    newScale = 1;
+                    state.pointX = 0;
+                    state.pointY = 0;
+                }
+
+                // 最大拡大率の制限（5倍）
                 if (newScale > 5) newScale = 5;
 
                 state.scale = newScale;
                 updateTransform();
 
             } else if (e.touches.length === 1 && state.panning && state.scale > 1) {
-                // 移動中
+                // --- 移動操作中 ---
+                // 拡大している時（scale > 1）だけ移動可能にする
+                
                 state.pointX = e.touches[0].clientX - state.startX;
                 state.pointY = e.touches[0].clientY - state.startY;
                 updateTransform();
             }
         });
 
+        // 3. 指を離した時
         modal.addEventListener('touchend', (e) => {
-            e.stopPropagation(); // 裏側への伝播防止
+            e.stopPropagation();
             
             if (e.touches.length === 0) {
                 state.panning = false;
+                
+                // 指を離した瞬間に、もし微妙に拡大されていたり（1.1倍未満）、
+                // 縮小されすぎていたら、パッと元のサイズ・中央位置にリセットする
+                if (state.scale < 1.1) {
+                    state.scale = 1;
+                    state.pointX = 0;
+                    state.pointY = 0;
+                    updateTransform();
+                }
             }
         });
         
         // 【重要】クリックイベントの防波堤
-        // これを追加することで、モーダル上のタップが裏の画像に届くのを完全に防ぎます
         modal.addEventListener('click', (e) => {
             e.stopPropagation();
         });

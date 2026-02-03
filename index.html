@@ -279,6 +279,61 @@
             background-color: #e0e7ff; /* 薄い青色 */
             border-top: 2px solid #5d72a8;
         }
+
+        /* --- 長押しメニューのスタイル --- */
+        
+        /* 背景の暗幕 */
+        .action-sheet-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 20000; /* 画像モーダル(9999)より上 */
+            display: none; /* 初期状態は非表示 */
+            align-items: flex-end; /* 下に寄せる */
+            justify-content: center;
+        }
+
+        /* メニュー本体 */
+        .action-sheet {
+            background: #f2f2f2;
+            width: 95%;
+            max-width: 400px;
+            margin-bottom: 20px;
+            border-radius: 13px;
+            overflow: hidden;
+            animation: slideUp 0.2s ease-out;
+        }
+
+        /* 各ボタン */
+        .action-item {
+            background: white;
+            padding: 16px;
+            text-align: center;
+            font-size: 18px;
+            color: #007aff; /* iOSっぽい青 */
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+        }
+        
+        .action-item:last-child {
+            border-bottom: none;
+        }
+
+        /* キャンセルボタンは少し太字で */
+        .action-item.cancel {
+            font-weight: bold;
+            margin-top: 8px; /* 少し隙間をあける */
+            border-radius: 13px;
+        }
+
+        /* 下から出てくるアニメーション */
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
         
     </style>
 </head>
@@ -327,6 +382,13 @@
         <span id="modal-back-btn" class="material-icons" onclick="closeModal()">arrow_back</span>
         
         <img id="modal-img" style="max-width: 95%; max-height: 95%; object-fit: contain; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+    </div>
+
+    <div id="context-menu" class="action-sheet-overlay" onclick="closeContextMenu()">
+        <div class="action-sheet">
+            <div class="action-item" onclick="downloadImage()">画像を保存</div>
+            <div class="action-item cancel">キャンセル</div>
+        </div>
     </div>
     
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -825,12 +887,18 @@
         // --- タッチ操作のロジック ---
         let startDist = 0;
         let startScale = 1;
+        
+        // 長押し判定用のタイマー変数
+        let longPressTimer = null;
 
         // 1. タッチ開始
         modal.addEventListener('touchstart', (e) => {
-            e.stopPropagation(); // 裏側への伝播防止
+            e.stopPropagation();
 
             if (e.touches.length === 2) {
+                // 指が2本あるなら長押し判定は中止
+                clearTimeout(longPressTimer);
+                
                 // ピンチ（ズーム）開始
                 e.preventDefault();
                 startDist = getDistance(e.touches[0], e.touches[1]);
@@ -840,27 +908,39 @@
                 state.panning = true;
                 state.startX = e.touches[0].clientX - state.pointX;
                 state.startY = e.touches[0].clientY - state.pointY;
+
+                // ★【追加】長押しタイマーを開始 (600ミリ秒で発動)
+                longPressTimer = setTimeout(() => {
+                    // 指が動いていなければメニューを表示
+                    openContextMenu();
+                    // ドラッグ状態を解除して、画面が動かないようにする
+                    state.panning = false;
+                }, 600);
             }
         });
 
         // 2. 指を動かしている時
         modal.addEventListener('touchmove', (e) => {
-            e.preventDefault(); // 画面スクロール防止
+            e.preventDefault();
             e.stopPropagation();
+
+            // ★【追加】指が動いたら長押しではないのでタイマー解除
+            // (数ピクセルのブレは許容するロジックも組めますが、今回は即解除で誤爆を防ぎます)
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
 
             if (e.touches.length === 2) {
                 // --- ピンチ操作中 ---
                 const dist = getDistance(e.touches[0], e.touches[1]);
                 let newScale = startScale * (dist / startDist);
                 
-                // 中央吸着ロジック
                 if (newScale < 1.1) {
                     newScale = 1;
                     state.pointX = 0;
                     state.pointY = 0;
                 }
-
-                // 最大拡大率
                 if (newScale > 5) newScale = 5;
 
                 state.scale = newScale;
@@ -878,10 +958,16 @@
         modal.addEventListener('touchend', (e) => {
             e.stopPropagation();
             
+            // ★【追加】指を離したら長押しタイマー解除
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            
             if (e.touches.length === 0) {
                 state.panning = false;
                 
-                // 指を離した瞬間の吸着チェック
+                // 吸着ロジック
                 if (state.scale < 1.1) {
                     state.scale = 1;
                     state.pointX = 0;
@@ -901,6 +987,33 @@
             const dx = t1.clientX - t2.clientX;
             const dy = t1.clientY - t2.clientY;
             return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        // --- 長押しメニューの制御 ---
+        function openContextMenu() {
+            // バイブレーション（Androidのみ対応、iOSは無視されます）
+            if (navigator.vibrate) navigator.vibrate(50);
+            document.getElementById('context-menu').style.display = 'flex';
+        }
+
+        function closeContextMenu() {
+            document.getElementById('context-menu').style.display = 'none';
+        }
+
+        function downloadImage() {
+            const img = document.getElementById('modal-img');
+            const link = document.createElement('a');
+            
+            // 現在の時間をファイル名にする
+            const timestamp = new Date().getTime();
+            link.href = img.src;
+            link.download = `image_${timestamp}.png`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            closeContextMenu();
         }
 
         // --- 自動ログイン監視機能 ---

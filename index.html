@@ -194,6 +194,26 @@
             transform-origin: center center; /* 真ん中を中心に拡大 */
             transition: transform 0.1s ease-out; /* 動きを滑らかに */
         }
+
+        /* モーダルの戻るボタン */
+        #modal-back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 32px;       /* 大きくて押しやすく */
+            padding: 12px;         /* タップ判定を広く */
+            background: rgba(0, 0, 0, 0.5); /* 半透明の黒背景 */
+            border-radius: 50%;    /* 丸くする */
+            cursor: pointer;
+            z-index: 10001;        /* 画像より手前に表示 */
+            user-select: none;     /* 文字選択させない */
+        }
+        
+        /* ボタンを押した時のリアクション */
+        #modal-back-btn:active {
+            background: rgba(255, 255, 255, 0.3);
+        }
         
     </style>
 </head>
@@ -237,7 +257,9 @@
         </button>
     </div>
 
-    <div id="image-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center;">
+    <div id="image-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 9999; justify-content: center; align-items: center;">
+        <span id="modal-back-btn" class="material-icons" onclick="closeModal()">arrow_back</span>
+        
         <img id="modal-img" style="max-width: 95%; max-height: 95%; object-fit: contain; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
     </div>
     
@@ -735,17 +757,15 @@
         let startDist = 0;
         let startScale = 1;
 
-        modal.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 2) {
-                // ピンチ（ズーム）開始
-                e.preventDefault();
-                startDist = getDistance(e.touches[0], e.touches[1]);
-                startScale = state.scale;
-            } else if (e.touches.length === 1) {
-                // パン（移動）開始
-                state.panning = true;
-                state.startX = e.touches[0].clientX - state.pointX;
-                state.startY = e.touches[0].clientY - state.pointY;
+        modal.addEventListener('touchend', (e) => {
+            // 指が離れた時
+            if (e.touches.length === 0) {
+                state.panning = false;
+                
+                // 【変更】
+                // ここにあった「if (state.scale === 1) closeModal();」を削除しました。
+                // これにより、画面をタップしても勝手に閉じなくなります。
+                // 閉じる手段は「左上の矢印ボタン」のみになります。
             }
         });
 

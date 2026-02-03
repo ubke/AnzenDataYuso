@@ -33,7 +33,21 @@
         #file-input { display: none; }
 
         /* 認証・設定モーダル */
-        #auth-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        #auth-modal { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(0,0,0,0.8); 
+            
+            /* 【変更】最初は隠しておく！ */
+            display: none; 
+            
+            justify-content: center; 
+            align-items: center; 
+            z-index: 1000; 
+        }
         .modal-content { background: white; padding: 25px; border-radius: 10px; width: 90%; max-width: 350px; text-align: center; }
         .modal-content input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
         .modal-content button { width: 100%; padding: 12px; background: #5d72a8; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
@@ -546,19 +560,18 @@
         // --- 自動ログイン監視機能 ---
         // ページを開いた時、以前のログイン状態が残っているかチェックします
         auth.onAuthStateChanged((user) => {
-            if (user) {
-                // ユーザーとしてのログイン記録は残っている。
-                // 次に、暗号化キーがブラウザに残っているか確認。
-                const savedKey = localStorage.getItem('savedKey');
+            const savedKey = localStorage.getItem('savedKey');
 
-                if (savedKey) {
-                    // 両方揃っていれば、ログイン画面を見せずに開始！
-                    secretKey = savedKey;
-                    initApp(user);
-                } else {
-                    // キーだけ無い場合は（キャッシュクリア等）、ログイン画面で入力を待つ
-                    // 何もしなくてOK（モーダルが出たままになる）
-                }
+            if (user && savedKey) {
+                // 【ログイン済みの場合】
+                // モーダルは最初から display: none なので、消す処理は不要。
+                // そのままアプリを開始するだけ。
+                secretKey = savedKey;
+                initApp(user);
+            } else {
+                // 【未ログインの場合】
+                // ここではじめてログイン画面を表示する
+                document.getElementById('auth-modal').style.display = 'flex';
             }
         });
 

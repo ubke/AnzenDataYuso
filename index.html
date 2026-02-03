@@ -355,6 +355,12 @@
 
                             // 【重要】正しい位置に挿入するロジック
                             insertMessageInCorrectOrder(container, div);
+
+                            // 初期ロード中（latestRenderIdが0）は、古いデータが上に差し込まれるたびに
+                            // 視点がずれてしまうので、強制的に一番下（最新）にスクロール位置を固定し続ける
+                            if (latestRenderId === 0) {
+                                container.scrollTop = container.scrollHeight;
+                            }
                         }
                     }
 

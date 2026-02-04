@@ -86,15 +86,15 @@
         /* 入力エリア（高さを広げてタップしやすく修正 + 固定強化） */
         #input-area { 
             background: white; 
-            /* 上下の余白を15pxに設定 */
-            padding: 15px 15px; 
+            /* 上下の余白を10pxに戻しました */
+            padding: 10px 15px; 
             display: flex; 
             align-items: center; 
             gap: 10px; 
             border-top: 1px solid #ddd; 
             
-            /* 下の余白も15pxベースで計算 */
-            padding-bottom: calc(15px + env(safe-area-inset-bottom));
+            /* 下の余白も10pxベースで計算 */
+            padding-bottom: calc(10px + env(safe-area-inset-bottom));
 
             flex-shrink: 0;
             position: relative; 
@@ -104,8 +104,8 @@
         /* テキスト入力欄 */
         #message-input { 
             flex: 1; 
-            /* 入力欄の中身もバランスよく調整 */
-            padding: 12px 15px; 
+            /* こちらも10pxに合わせてスリムに */
+            padding: 10px 15px; 
             border-radius: 20px; 
             border: 1px solid #ddd; 
             outline: none; 

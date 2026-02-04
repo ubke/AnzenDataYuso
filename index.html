@@ -1031,51 +1031,58 @@
             targetDownloadSrc = ""; 
         }
 
-        // 画像をクリップボードにコピーする機能（PNG変換対応）
+        // 画像をクリップボードにコピーする機能（Brave/Android対応）
         async function copyImage() {
             if (!targetDownloadSrc) return;
             
-            closeContextMenu(); // 先にメニューを閉じる
+            closeContextMenu(); // メニューを閉じる
 
+            // --- プランA：キャンバスを使って綺麗にPNG変換してコピー ---
             try {
-                // 1. 画像を読み込む（imgタグを作成）
                 const img = new Image();
-                img.crossOrigin = "Anonymous"; // 外部画像の読み込み許可
+                // ★修正点：ここにあった crossOrigin の行を削除しました（読み込みエラー対策）
                 img.src = targetDownloadSrc;
                 
                 await new Promise((resolve, reject) => {
                     img.onload = resolve;
-                    img.onerror = reject;
+                    img.onerror = () => reject(new Error("画像の読み込みエラー"));
                 });
 
-                // 2. 見えないキャンバスに描画
                 const canvas = document.createElement('canvas');
                 canvas.width = img.naturalWidth;
                 canvas.height = img.naturalHeight;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0);
 
-                // 3. PNG形式のBlobとして取り出す
-                canvas.toBlob(async (blob) => {
-                    if (!blob) {
-                        alert("画像の変換に失敗しました");
-                        return;
-                    }
+                // キャンバスからPNGデータを取得（Promise化）
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
 
-                    try {
-                        // 4. クリップボードに書き込む（これならAndroidも受け入れる）
-                        const item = new ClipboardItem({ "image/png": blob });
-                        await navigator.clipboard.write([item]);
-                        alert("画像をコピーしました");
-                    } catch (err) {
-                        console.error(err);
-                        alert("このブラウザは画像のコピーに対応していないようです。");
-                    }
-                }, 'image/png'); // ★ここで強制的にPNGにする
+                if (!blob) {
+                    throw new Error("キャンバス処理がブロックされました"); // Braveなどで起きる
+                }
 
-            } catch (err) {
-                console.error(err);
-                alert("画像の読み込みに失敗しました");
+                await navigator.clipboard.write([
+                    new ClipboardItem({ "image/png": blob })
+                ]);
+                alert("画像をコピーしました");
+
+            } catch (e) {
+                console.log("プランA失敗:", e);
+
+                // --- プランB：変換せずに元のデータをそのままコピー（Brave救済策） ---
+                try {
+                    const response = await fetch(targetDownloadSrc);
+                    const blob = await response.blob();
+                    
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ [blob.type]: blob })
+                    ]);
+                    alert("画像をコピーしました");
+                    
+                } catch (err2) {
+                    console.error(err2);
+                    alert("コピーに失敗しました。\n※Brave等の場合、アドレスバーのライオンアイコンから「シールド」を一時的にOFFにすると動作する場合があります。");
+                }
             }
         }
 

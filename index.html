@@ -1183,7 +1183,7 @@
             updatePreview(); // 再描画
         }
 
-        // --- 送信処理（ストックされた画像を処理するよう変更） ---
+        // --- 送信処理（巨大ファイル対応・分割バッチ版） ---
         async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value;
@@ -1196,67 +1196,95 @@
             sendBtn.style.opacity = "0.5";
 
             try {
-                // 1. ストックされている画像をデータURL（文字列）に一括変換
+                // 1. ストックされている画像をデータURLに一括変換
                 let imagesData = [];
                 if (stockedFiles.length > 0) {
                     const readPromises = stockedFiles.map(file => {
-                        return new Promise((resolve) => {
+                        return new Promise((resolve, reject) => {
                             const reader = new FileReader();
                             reader.onload = (e) => resolve(e.target.result);
+                            reader.onerror = (e) => reject(e);
                             reader.readAsDataURL(file);
                         });
                     });
-                    // 全部の変換が終わるのを待つ
                     imagesData = await Promise.all(readPromises);
                 }
 
                 // 2. ペイロード作成
                 const payload = {
                     text: text,
-                    images: imagesData,
+                    images: imagesData, // 動画もここに含まれます
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
-                // 3. 暗号化・分割保存（変更なし）
+                // 3. 暗号化
+                // ※動画が長すぎるとここ（JSON.stringify）でメモリ不足になる可能性がありますが、
+                // まずは送信ロジックの改善で対応します。
                 const encryptedContent = encryptData(JSON.stringify(payload));
-                const BATCH_SIZE = 900000;
+                
+                // バッチサイズ（約800KBに設定して安全マージンを取る）
+                const BATCH_SIZE = 800000; 
                 const totalLength = encryptedContent.length;
                 
                 const docRef = db.collection('users').doc(currentUser.uid).collection('memos').doc();
-                const batch = db.batch();
 
+                // --- 分岐：サイズが小さい場合 ---
                 if (totalLength <= BATCH_SIZE) {
-                    batch.set(docRef, {
+                    await docRef.set({
                         content: encryptedContent,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                         type: 'simple'
                     });
+
+                // --- 分岐：サイズが大きい場合（動画など） ---
                 } else {
+                    // 文字列をチャンク（断片）に分割
                     const chunks = [];
                     for (let i = 0; i < totalLength; i += BATCH_SIZE) {
                         chunks.push(encryptedContent.substring(i, i + BATCH_SIZE));
                     }
-                    batch.set(docRef, {
+
+                    // 【重要】Firestoreの「1バッチ500書き込み制限」を回避するため、
+                    // チャンクを400個ずつのグループに分けて、順番に保存していく
+                    const WRITE_BATCH_LIMIT = 400;
+                    
+                    for (let i = 0; i < chunks.length; i += WRITE_BATCH_LIMIT) {
+                        const batch = db.batch();
+                        const currentBatchChunks = chunks.slice(i, i + WRITE_BATCH_LIMIT);
+                        
+                        currentBatchChunks.forEach((chunkData, index) => {
+                            // 全体の中での通し番号（000, 001, 002...）
+                            const globalIndex = i + index;
+                            const chunkRef = docRef.collection('chunks').doc(globalIndex.toString().padStart(3, '0'));
+                            batch.set(chunkRef, { data: chunkData });
+                        });
+
+                        // 400個書き込むごとに送信実行
+                        await batch.commit();
+                    }
+
+                    // 最後に本体（目次データ）を書き込む
+                    // ※これを最後にすることで、読み込み側が「まだデータがないのに読み込もうとする」のを防げます
+                    await docRef.set({
                         type: 'composite',
-                        count: chunks.length,
+                        count: chunks.length, // 分割数
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    chunks.forEach((chunk, index) => {
-                        const chunkRef = docRef.collection('chunks').doc(index.toString().padStart(3, '0'));
-                        batch.set(chunkRef, { data: chunk });
                     });
                 }
 
-                await batch.commit();
-
                 // 4. 送信完了後のリセット
                 input.value = "";
-                stockedFiles = []; // ストックを空にする
-                updatePreview();   // プレビューを消す
+                stockedFiles = []; 
+                updatePreview();   
 
             } catch (e) {
                 console.error(e);
-                alert("送信エラー: " + e.message);
+                // エラー内容をアラートで見やすく表示
+                if (e.message.includes("Invalid string length") || e.message.includes("Invalid array length")) {
+                    alert("動画サイズが大きすぎてブラウザで処理できませんでした。\nもう少し短い動画か、画質を下げた動画を試してください。");
+                } else {
+                    alert("送信エラー: " + e.message);
+                }
             } finally {
                 sendBtn.disabled = false;
                 sendBtn.style.opacity = "1";

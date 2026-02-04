@@ -13,7 +13,21 @@
             --msg-bg-me: #8de055;
             --text-color: #333;
         }
-        body { margin: 0; font-family: sans-serif; background-color: var(--chat-bg); height: 100vh; display: flex; flex-direction: column; }
+        body { 
+            margin: 0; 
+            font-family: sans-serif; 
+            background-color: var(--chat-bg); 
+            
+            /* 【重要変更】 100vh ではなく 100dvh にします */
+            /* これでアドレスバーが動いても入力欄が画面外に消えなくなります */
+            height: 100dvh; 
+            
+            display: flex; 
+            flex-direction: column; 
+            
+            /* 画面全体がスクロールしてしまうのを防ぐ */
+            overflow: hidden; 
+        }
         
         /* ヘッダー */
         header { background-color: #5d72a8; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -69,18 +83,20 @@
         
         .message img { max-width: 100%; border-radius: 10px; display: block; margin-top: 5px; cursor: pointer; }
         
-        /* 入力エリア（高さを広げてタップしやすく修正） */
+        /* 入力エリア（高さを広げてタップしやすく修正 + 固定強化） */
         #input-area { 
             background: white; 
-            /* 上下の余白を20pxに増やして高さを確保 */
             padding: 20px 15px; 
             display: flex; 
             align-items: center; 
-            gap: 15px; /* ボタンとの間隔も少し広げる */
+            gap: 15px; 
             border-top: 1px solid #ddd; 
-            
-            /* 【重要】スマホの下端（ジェスチャーバー）に被らないようにする魔法の記述 */
             padding-bottom: calc(20px + env(safe-area-inset-bottom));
+
+            /* 【追加】ここから下を追加してください */
+            flex-shrink: 0;   /* 画面が狭くなっても、ここだけは絶対につぶさない */
+            position: relative; 
+            z-index: 10;      /* 常に一番手前に表示 */
         }
 
         /* テキスト入力欄（こちらも大きくする） */

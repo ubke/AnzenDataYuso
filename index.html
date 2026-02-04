@@ -175,7 +175,105 @@
         }
         .modal-content h2 { margin-top: 0; color: var(--accent-color); }
         .modal-content input { 
-            width: 100%; padding: 12px; margin:
+            width: 100%; padding: 12px; margin: 10px 0; box-sizing: border-box;
+            background: #233554; border: 1px solid #455a78; color: var(--dark-part-text); border-radius: 6px;
+        }
+        .modal-content button { 
+            width: 100%; padding: 14px; 
+            background: var(--msg-bg-me); 
+            color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;
+            margin-top: 10px;
+        }
+
+        /* --- ロード画面 --- */
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--chat-bg);
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 2000; color: white; font-weight: bold; letter-spacing: 2px;
+        }
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%; width: 50px; height: 50px;
+            animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- 画像拡大モーダル --- */
+        #image-modal { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.95); z-index: 9999; 
+            justify-content: center; align-items: center;
+            touch-action: none; 
+        }
+        #modal-img {
+            max-width: 95%; max-height: 95%; object-fit: contain;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            touch-action: none; transform-origin: center center; transition: transform 0.1s ease-out;
+        }
+        #modal-back-btn {
+            position: absolute; top: 20px; left: 20px;
+            color: white; font-size: 32px; padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%; cursor: pointer; z-index: 10001; user-select: none;
+        }
+
+        /* --- 長押しメニュー --- */
+        .action-sheet-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 20000;
+            display: none; align-items: flex-end; justify-content: center;
+        }
+        .action-sheet {
+            background: #172a45;
+            width: 95%; max-width: 400px; margin-bottom: 24px;
+            border-radius: 16px; overflow: hidden;
+            animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+            border: 1px solid #304769;
+        }
+        .action-item {
+            background: #233554;
+            padding: 18px; text-align: center; font-size: 17px;
+            color: var(--accent-color);
+            border-bottom: 1px solid #304769; cursor: pointer;
+        }
+        .action-item:last-child { border-bottom: none; }
+        .action-item.cancel {
+            font-weight: bold; color: var(--danger-color);
+            border-top: 4px solid #172a45; 
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        /* --- 画像グリッド --- */
+        .image-grid {
+            display: grid; gap: 2px; border-radius: 12px; overflow: hidden;
+            width: 100%; max-width: 300px;
+        }
+        .image-grid[data-count="1"] { grid-template-columns: 1fr; }
+        .image-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
+        .image-grid[data-count="3"] { grid-template-columns: 1fr 1fr 1fr; }
+        .image-grid[data-count="4"] { grid-template-columns: 1fr 1fr; }
+        .image-grid[data-count="5"], .image-grid[data-count="6"], 
+        .image-grid[data-count="7"], .image-grid[data-count="8"], 
+        .image-grid[data-count="9"] { grid-template-columns: repeat(3, 1fr); }
+
+        .image-grid img, .image-grid video {
+            width: 100%; height: 100%; object-fit: cover; aspect-ratio: 1 / 1; display: block;
+        }
+        .image-grid[data-count="1"] img, .image-grid[data-count="1"] video {
+            aspect-ratio: auto; max-height: 400px;
+        }
+
+        /* 標準メニュー禁止 */
+        img {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+        }
+        
+        .hidden { display: none !important; }
         
     </style>
 </head>

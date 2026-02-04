@@ -69,9 +69,31 @@
         
         .message img { max-width: 100%; border-radius: 10px; display: block; margin-top: 5px; cursor: pointer; }
         
-        /* 入力エリア */
-        #input-area { background: white; padding: 10px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #ddd; }
-        #message-input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #ddd; outline: none; font-size: 16px; }
+        /* 入力エリア（高さを広げてタップしやすく修正） */
+        #input-area { 
+            background: white; 
+            /* 上下の余白を20pxに増やして高さを確保 */
+            padding: 20px 15px; 
+            display: flex; 
+            align-items: center; 
+            gap: 15px; /* ボタンとの間隔も少し広げる */
+            border-top: 1px solid #ddd; 
+            
+            /* 【重要】スマホの下端（ジェスチャーバー）に被らないようにする魔法の記述 */
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+        }
+
+        /* テキスト入力欄（こちらも大きくする） */
+        #message-input { 
+            flex: 1; 
+            /* 内側の余白を増やしてタップ判定を大きく */
+            padding: 15px; 
+            border-radius: 30px; /* 丸みを強く */
+            border: 1px solid #ddd; 
+            outline: none; 
+            font-size: 16px; 
+        }
+        
         #file-btn, #send-btn { background: none; border: none; cursor: pointer; color: #5d72a8; }
         #file-input { display: none; }
 

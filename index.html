@@ -1031,29 +1031,52 @@
             targetDownloadSrc = ""; 
         }
 
-        // 【追加】画像をクリップボードにコピーする機能
+        // 画像をクリップボードにコピーする機能（PNG変換対応）
         async function copyImage() {
             if (!targetDownloadSrc) return;
             
+            closeContextMenu(); // 先にメニューを閉じる
+
             try {
-                // 画像データ（Blob）を取得
-                const response = await fetch(targetDownloadSrc);
-                const blob = await response.blob();
+                // 1. 画像を読み込む（imgタグを作成）
+                const img = new Image();
+                img.crossOrigin = "Anonymous"; // 外部画像の読み込み許可
+                img.src = targetDownloadSrc;
                 
-                // クリップボードに書き込み
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        [blob.type]: blob
-                    })
-                ]);
-                
-                alert("画像をコピーしました");
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                });
+
+                // 2. 見えないキャンバスに描画
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                // 3. PNG形式のBlobとして取り出す
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        alert("画像の変換に失敗しました");
+                        return;
+                    }
+
+                    try {
+                        // 4. クリップボードに書き込む（これならAndroidも受け入れる）
+                        const item = new ClipboardItem({ "image/png": blob });
+                        await navigator.clipboard.write([item]);
+                        alert("画像をコピーしました");
+                    } catch (err) {
+                        console.error(err);
+                        alert("このブラウザは画像のコピーに対応していないようです。");
+                    }
+                }, 'image/png'); // ★ここで強制的にPNGにする
+
             } catch (err) {
                 console.error(err);
-                alert("コピーに失敗しました（ブラウザが対応していない可能性があります）");
+                alert("画像の読み込みに失敗しました");
             }
-            
-            closeContextMenu();
         }
 
         // 画像を保存する機能

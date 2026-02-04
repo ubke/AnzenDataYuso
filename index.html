@@ -86,24 +86,27 @@
         /* 入力エリア（高さを広げてタップしやすく修正 + 固定強化） */
         #input-area { 
             background: white; 
-            padding: 20px 15px; 
+            /* 上下の余白を15pxに設定 */
+            padding: 15px 15px; 
             display: flex; 
             align-items: center; 
-            gap: 15px; 
+            gap: 10px; 
             border-top: 1px solid #ddd; 
-            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+            
+            /* 下の余白も15pxベースで計算 */
+            padding-bottom: calc(15px + env(safe-area-inset-bottom));
 
-            flex-shrink: 0;   /* 画面が狭くなっても、ここだけは絶対につぶさない */
+            flex-shrink: 0;
             position: relative; 
-            z-index: 10;      /* 常に一番手前に表示 */
+            z-index: 10;
         }
 
-        /* テキスト入力欄（こちらも大きくする） */
+        /* テキスト入力欄 */
         #message-input { 
             flex: 1; 
-            /* 内側の余白を増やしてタップ判定を大きく */
-            padding: 15px; 
-            border-radius: 30px; /* 丸みを強く */
+            /* 入力欄の中身もバランスよく調整 */
+            padding: 12px 15px; 
+            border-radius: 20px; 
             border: 1px solid #ddd; 
             outline: none; 
             font-size: 16px; 

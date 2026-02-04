@@ -386,6 +386,7 @@
 
     <div id="context-menu" class="action-sheet-overlay" onclick="closeContextMenu()">
         <div class="action-sheet">
+            <div class="action-item" onclick="copyImage()">画像をコピー</div>
             <div class="action-item" onclick="downloadImage()">画像を保存</div>
             <div class="action-item cancel">キャンセル</div>
         </div>
@@ -1018,31 +1019,51 @@
 
         // --- 長押しメニューの制御 ---
         
-        let targetDownloadSrc = ""; // 保存対象の画像を記憶する変数
+        let targetDownloadSrc = ""; // 対象の画像を記憶
 
         function openContextMenu(src) {
-            // 保存する画像のURLをセット
             targetDownloadSrc = src;
-            
-            // 【削除】navigator.vibrate(50); を削除しました（振動なし）
-            
             document.getElementById('context-menu').style.display = 'flex';
         }
 
         function closeContextMenu() {
             document.getElementById('context-menu').style.display = 'none';
-            targetDownloadSrc = ""; // リセット
+            targetDownloadSrc = ""; 
         }
 
+        // 【追加】画像をクリップボードにコピーする機能
+        async function copyImage() {
+            if (!targetDownloadSrc) return;
+            
+            try {
+                // 画像データ（Blob）を取得
+                const response = await fetch(targetDownloadSrc);
+                const blob = await response.blob();
+                
+                // クリップボードに書き込み
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        [blob.type]: blob
+                    })
+                ]);
+                
+                alert("画像をコピーしました");
+            } catch (err) {
+                console.error(err);
+                alert("コピーに失敗しました（ブラウザが対応していない可能性があります）");
+            }
+            
+            closeContextMenu();
+        }
+
+        // 画像を保存する機能
         function downloadImage() {
             if (!targetDownloadSrc) return;
 
             const link = document.createElement('a');
-            
-            // 現在の時間をファイル名にする
             const timestamp = new Date().getTime();
             link.href = targetDownloadSrc;
-            link.download = `image_${timestamp}.png`; // 拡張子は適宜
+            link.download = `image_${timestamp}.png`;
             
             document.body.appendChild(link);
             link.click();
@@ -1050,6 +1071,7 @@
             
             closeContextMenu();
         }
+        
         // --- 自動ログイン監視機能 ---
         // ページを開いた時、以前のログイン状態が残っているかチェックします
         auth.onAuthStateChanged((user) => {

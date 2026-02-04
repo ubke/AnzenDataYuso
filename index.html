@@ -374,6 +374,13 @@
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
         }
+
+        /* 画像の長押しで出る標準メニュー（保存や共有）を完全に無効化する設定 */
+        img {
+            -webkit-touch-callout: none !important; /* iPhone/Androidで長押しメニューを禁止 */
+            -webkit-user-select: none !important;   /* 画像の選択を禁止 */
+            user-select: none !important;
+        }
         
     </style>
 </head>

@@ -6,25 +6,30 @@
     <title>Secure Memo Transfer</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
-        /* === Secure Memo Transfer : Hybrid Blue Theme === */
+        /* === Secure Memo Transfer : Dark Blue Theme (Menu Light) === */
         
         :root {
-            /* ★背景だけ元の爽やかな色に戻す */
-            --chat-bg: #85a0e6;
-            
-            /* ヘッダーなどはかっこいいダークブルーを維持 */
+            /* 全体の背景（深海のような暗い青） */
             --bg-color: #0a192f;
+            /* チャットエリアの背景（少し明るめの落ち着いた青） */
+            --chat-bg: #172a45;
+            /* 自分のメッセージの吹き出し（鮮やかなアクセントブルー） */
             --msg-bg-me: #1e4976;
+            /* 基本のテキスト色（白に近いグレー） */
+            --text-color: #e6f1ff;
+            /* 自分のメッセージ内のテキスト色 */
+            --msg-text-color-me: #ffffff;
+            /* アクセントカラー（ネオンシアン） */
             --accent-color: #64ffda;
+            /* エラー・キャンセル色 */
             --danger-color: #ff6b6b;
-            
-            /* ★背景が明るくなるので、基本の文字色は黒に戻す */
-            --text-color: #333333;
-            /* ダークなパーツ（吹き出し等）の中の文字は白にする */
-            --dark-part-text: #ffffff;
+            /* ★追加：ライトメニュー用の色 */
+            --menu-bg-light: #ffffff;
+            --menu-text-light: #333333;
+            --menu-border-light: #e0e0e0;
         }
 
-        /* --- 基本設定 --- */
+        /* --- 基本設定（キーボード対策含む） --- */
         html { height: 100%; }
         
         body { 
@@ -34,19 +39,19 @@
             height: 100%; 
             display: flex; 
             flex-direction: column; 
-            overflow: hidden; 
+            overflow: hidden; /* 全体のスクロール禁止 */
             color: var(--text-color);
         }
         
-        /* --- ヘッダー（ダークで引き締める） --- */
+        /* --- ヘッダー --- */
         header { 
             background-color: var(--bg-color); 
-            color: var(--dark-part-text); /* 白文字 */
+            color: var(--text-color); 
             padding: 15px; 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2); 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4); 
             z-index: 20; 
         }
         h1 { margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 1px; }
@@ -64,12 +69,12 @@
         /* メッセージ行 */
         .message-row {
             display: flex;
-            justify-content: flex-end; 
+            justify-content: flex-end; /* 常に右寄せ */
             align-items: flex-end;
             width: 100%;
         }
 
-        /* 吹き出し（ダークブルーでかっこよく） */
+        /* 吹き出し */
         .message-bubble {
             max-width: 75%;
             padding: 12px 16px;
@@ -81,39 +86,50 @@
             
             /* ダークテーマ適用 */
             background-color: var(--msg-bg-me);
-            color: var(--dark-part-text); /* 白文字 */
-            border-bottom-right-radius: 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            color: var(--msg-text-color-me);
+            border-bottom-right-radius: 4px; /* 右下を尖らせる */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
 
+        /* 画像スタイル */
         .message-bubble img { 
-            max-width: 100%; border-radius: 12px; display: block; cursor: pointer; 
+            max-width: 100%; 
+            border-radius: 12px; 
+            display: block; 
+            cursor: pointer; 
         }
 
-        /* 時刻表示（背景が明るいので黒っぽく調整） */
+        /* 時刻表示 */
         .timestamp {
             display: block;
             font-size: 11px;
-            color: rgba(0, 0, 0, 0.5); /* 黒の半透明 */
+            color: rgba(230, 241, 255, 0.5); /* 薄い文字 */
             text-align: right;
             margin-top: 5px;
             line-height: 1;
         }
         .message .image-grid + .timestamp { margin-top: 8px; }
 
-        /* --- プレビューエリア（ダーク仕様維持） --- */
+        /* --- プレビューエリア --- */
         #preview-area {
-            display: flex; gap: 12px; padding: 0 15px;
-            background: #233554; /* 入力欄と一体化 */
+            display: flex;
+            gap: 12px;
+            padding: 0 15px;
+            background: #233554;
             overflow-x: auto;
             border-top: 1px solid #304769;
         }
         #preview-area:empty { display: none; padding: 0; border: none; }
 
         .preview-item {
-            position: relative; width: 64px; height: 64px; margin: 12px 0;
-            border-radius: 8px; overflow: hidden; flex-shrink: 0;
-            border: 1px solid #455a78; background: #172a45;
+            position: relative;
+            width: 64px; height: 64px; 
+            margin: 12px 0;
+            border-radius: 8px; 
+            overflow: hidden; 
+            flex-shrink: 0;
+            border: 1px solid #455a78;
+            background: #172a45;
         }
         .preview-item img { width: 100%; height: 100%; object-fit: cover; }
         
@@ -124,16 +140,22 @@
             display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
 
-        /* --- 入力エリア（ダーク仕様維持） --- */
+        /* --- 入力エリア --- */
         #input-area { 
             background: #233554; 
             padding: 10px 15px; 
             display: flex; align-items: center; gap: 12px; 
             border-top: 1px solid #304769;
+            
+            /* スマホの下端対応 */
             padding-bottom: calc(10px + env(safe-area-inset-bottom));
-            flex-shrink: 0; position: relative; z-index: 10;
+            
+            flex-shrink: 0; 
+            position: relative; 
+            z-index: 10;
         }
         
+        /* ドラッグ時のハイライト */
         #input-area.dragover {
             background-color: #2a4a7c;
             border-top: 2px solid var(--accent-color);
@@ -147,14 +169,15 @@
             border: 1px solid #455a78;
             outline: none; 
             font-size: 16px;
-            background: #172a45; /* ダーク背景 */
-            color: var(--dark-part-text); /* 白文字 */
+            background: #172a45; 
+            color: var(--text-color);
         }
         #message-input::placeholder { color: rgba(230, 241, 255, 0.4); }
 
+        /* アイコンボタン */
         #file-btn, #send-btn { 
             background: none; border: none; cursor: pointer; 
-            color: var(--accent-color);
+            color: var(--accent-color); /* ネオンカラー */
             transition: opacity 0.2s;
         }
         #file-btn:active, #send-btn:active { opacity: 0.6; }
@@ -168,7 +191,7 @@
         }
         .modal-content { 
             background: #172a45; 
-            color: var(--dark-part-text);
+            color: var(--text-color);
             padding: 30px; border-radius: 12px; width: 85%; max-width: 320px; text-align: center;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             border: 1px solid #304769;
@@ -176,7 +199,7 @@
         .modal-content h2 { margin-top: 0; color: var(--accent-color); }
         .modal-content input { 
             width: 100%; padding: 12px; margin: 10px 0; box-sizing: border-box;
-            background: #233554; border: 1px solid #455a78; color: var(--dark-part-text); border-radius: 6px;
+            background: #233554; border: 1px solid #455a78; color: var(--text-color); border-radius: 6px;
         }
         .modal-content button { 
             width: 100%; padding: 14px; 
@@ -190,28 +213,32 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: var(--chat-bg);
             display: none; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 2000; color: white; font-weight: bold; letter-spacing: 2px;
+            z-index: 2000; color: var(--accent-color); font-weight: bold; letter-spacing: 2px;
         }
         .loader {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid white;
+            border: 4px solid rgba(100, 255, 218, 0.2);
+            border-top: 4px solid var(--accent-color);
             border-radius: 50%; width: 50px; height: 50px;
             animation: spin 1s linear infinite; margin-bottom: 20px;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
         /* --- 画像拡大モーダル --- */
         #image-modal { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             background: rgba(0,0,0,0.95); z-index: 9999; 
             justify-content: center; align-items: center;
-            touch-action: none; 
+            touch-action: none; /* 【重要】裏側への貫通防止 */
         }
         #modal-img {
             max-width: 95%; max-height: 95%; object-fit: contain;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
             touch-action: none; transform-origin: center center; transition: transform 0.1s ease-out;
         }
+        /* 戻るボタン */
         #modal-back-btn {
             position: absolute; top: 20px; left: 20px;
             color: white; font-size: 32px; padding: 12px;
@@ -219,32 +246,40 @@
             border-radius: 50%; cursor: pointer; z-index: 10001; user-select: none;
         }
 
-        /* --- 長押しメニュー --- */
+        /* --- 長押しメニュー（アクションシート）★ここを修正 --- */
         .action-sheet-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.6); z-index: 20000;
             display: none; align-items: flex-end; justify-content: center;
         }
         .action-sheet {
-            background: #172a45;
+            /* 背景を白に変更 */
+            background: var(--menu-bg-light);
             width: 95%; max-width: 400px; margin-bottom: 24px;
             border-radius: 16px; overflow: hidden;
             animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-            box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
-            border: 1px solid #304769;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2); /* 影を少し明るく */
+            border: none; /* 枠線を削除 */
         }
         .action-item {
-            background: #233554;
+            /* 背景を白、文字を黒に変更 */
+            background: var(--menu-bg-light);
             padding: 18px; text-align: center; font-size: 17px;
-            color: var(--accent-color);
-            border-bottom: 1px solid #304769; cursor: pointer;
+            color: var(--menu-text-light);
+            /* 境界線を明るいグレーに変更 */
+            border-bottom: 1px solid var(--menu-border-light); 
+            cursor: pointer;
         }
         .action-item:last-child { border-bottom: none; }
         .action-item.cancel {
             font-weight: bold; color: var(--danger-color);
-            border-top: 4px solid #172a45; 
+            /* キャンセルボタンの上の区切り線も明るく */
+            border-top: 8px solid #f2f2f2; 
         }
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
 
         /* --- 画像グリッド --- */
         .image-grid {
@@ -266,7 +301,7 @@
             aspect-ratio: auto; max-height: 400px;
         }
 
-        /* 標準メニュー禁止 */
+        /* 【重要】画像の長押し標準メニュー禁止 */
         img {
             -webkit-touch-callout: none !important;
             -webkit-user-select: none !important;

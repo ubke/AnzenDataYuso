@@ -9,24 +9,21 @@
         /* === Secure Memo Transfer : Dark Blue Theme (Menu Light) === */
         
         :root {
-            /* 全体の背景（深海のような暗い青） */
+            /* ★背景：爽やかなブルー */
+            --chat-bg: #85a0e6;
+            
+            /* UIパーツ：かっこいいダークブルー */
             --bg-color: #0a192f;
-            /* チャットエリアの背景（少し明るめの落ち着いた青） */
-            --chat-bg: #172a45;
-            /* 自分のメッセージの吹き出し（鮮やかなアクセントブルー） */
             --msg-bg-me: #1e4976;
-            /* 基本のテキスト色（白に近いグレー） */
-            --text-color: #e6f1ff;
-            /* 自分のメッセージ内のテキスト色 */
-            --msg-text-color-me: #ffffff;
-            /* アクセントカラー（ネオンシアン） */
+            
+            /* 基本文字色（背景が明るいので黒） */
+            --text-color: #333333;
+            /* ダークなパーツ内の文字色（白） */
+            --dark-text: #ffffff;
+            
+            /* アクセントカラー */
             --accent-color: #64ffda;
-            /* エラー・キャンセル色 */
             --danger-color: #ff6b6b;
-            /* ★追加：ライトメニュー用の色 */
-            --menu-bg-light: #ffffff;
-            --menu-text-light: #333333;
-            --menu-border-light: #e0e0e0;
         }
 
         /* --- 基本設定（キーボード対策含む） --- */
@@ -46,12 +43,12 @@
         /* --- ヘッダー --- */
         header { 
             background-color: var(--bg-color); 
-            color: var(--text-color); 
+            color: #ffffff; /* ★ここを白文字で固定 */
             padding: 15px; 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4); 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); 
             z-index: 20; 
         }
         h1 { margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 1px; }
@@ -103,7 +100,7 @@
         .timestamp {
             display: block;
             font-size: 11px;
-            color: rgba(230, 241, 255, 0.5); /* 薄い文字 */
+            color: rgba(0, 0, 0, 0.5); /* ★背景が明るいので黒の半透明に変更 */
             text-align: right;
             margin-top: 5px;
             line-height: 1;
@@ -170,7 +167,7 @@
             outline: none; 
             font-size: 16px;
             background: #172a45; 
-            color: var(--text-color);
+            color: #ffffff; /* ★入力文字を白にする */
         }
         #message-input::placeholder { color: rgba(230, 241, 255, 0.4); }
 
@@ -252,30 +249,27 @@
             background: rgba(0,0,0,0.6); z-index: 20000;
             display: none; align-items: flex-end; justify-content: center;
         }
+        /* --- 長押しメニュー（白背景・黒文字） --- */
         .action-sheet {
-            /* 背景を白に変更 */
-            background: var(--menu-bg-light);
+            background: #ffffff; /* ★白背景 */
             width: 95%; max-width: 400px; margin-bottom: 24px;
             border-radius: 16px; overflow: hidden;
             animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.2); /* 影を少し明るく */
-            border: none; /* 枠線を削除 */
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
         }
         .action-item {
-            /* 背景を白、文字を黒に変更 */
-            background: var(--menu-bg-light);
+            background: #ffffff; /* ★白背景 */
             padding: 18px; text-align: center; font-size: 17px;
-            color: var(--menu-text-light);
-            /* 境界線を明るいグレーに変更 */
-            border-bottom: 1px solid var(--menu-border-light); 
+            color: #333333; /* ★黒文字 */
+            border-bottom: 1px solid #e0e0e0; /* ★薄いグレーの線 */
             cursor: pointer;
         }
-        .action-item:last-child { border-bottom: none; }
         .action-item.cancel {
             font-weight: bold; color: var(--danger-color);
-            /* キャンセルボタンの上の区切り線も明るく */
             border-top: 8px solid #f2f2f2; 
         }
+        .action-item:last-child { border-bottom: none; }
+        
         @keyframes slideUp {
             from { transform: translateY(100%); }
             to { transform: translateY(0); }

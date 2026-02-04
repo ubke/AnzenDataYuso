@@ -475,7 +475,12 @@
         function initApp(user) {
             currentUser = user;
             document.getElementById('auth-modal').classList.add('hidden');
+            
+            // メッセージ読み込み開始
             loadMessages();
+            
+            // ★【追加】起動時に「2日より古いデータ」を裏で削除する
+            deleteOldData();
         }
 
         function logout() {
@@ -562,11 +567,16 @@
         let isLoadingOld = false;  // 読み込み中フラグ
 
         // --- メッセージ読み込み（3件ずつ読み込み・画面埋め合わせ対応版） ---
+        // --- メッセージ読み込み（軽量化：2日以内のデータのみ） ---
         function loadMessages() {
             const container = document.getElementById('chat-container');
             const loadingScreen = document.getElementById('loading-screen');
 
             loadingScreen.style.display = 'flex';
+
+            // ★【追加】2日前より古いデータは読み込まない設定
+            const limitDate = new Date();
+            limitDate.setDate(limitDate.getDate() - 2);
 
             container.addEventListener('scroll', async () => {
                 if (container.scrollTop === 0 && !isLoadingOld && oldestDoc) {
@@ -575,6 +585,7 @@
             });
 
             db.collection('users').doc(currentUser.uid).collection('memos')
+                .where('createdAt', '>', limitDate) // ★重要：2日以内のみ
                 .orderBy('createdAt', 'desc') 
                 .limit(3)
                 .onSnapshot(async (snapshot) => {
@@ -632,10 +643,6 @@
                         
                         setTimeout(() => {
                             loadingScreen.style.display = 'none';
-                            
-                            // 【★修正点】
-                            // ロード画面を消した後、もしスクロールバーが出ていなければ（画面が埋まってなければ）
-                            // 強制的に過去ログを読み込みに行く
                             if (container.scrollHeight <= container.clientHeight && oldestDoc) {
                                 loadOlderMessages();
                             }
@@ -1326,6 +1333,56 @@
                     '"': '&quot;'
                 }[tag]));
         }
+
+        // --- 【新規追加】2日以上前のデータを自動削除する機能 ---
+        async function deleteOldData() {
+            if (!currentUser) return;
+            
+            console.log("古いデータの削除を開始します...");
+            
+            // 2日前を計算
+            const limitDate = new Date();
+            limitDate.setDate(limitDate.getDate() - 2);
+
+            try {
+                // 2日より古いデータを検索
+                const snapshot = await db.collection('users').doc(currentUser.uid).collection('memos')
+                    .where('createdAt', '<', limitDate)
+                    .get();
+
+                if (snapshot.empty) {
+                    console.log("削除対象のデータはありません。");
+                    return;
+                }
+
+                const batch = db.batch();
+                let count = 0;
+
+                for (const doc of snapshot.docs) {
+                    const data = doc.data();
+
+                    // 分割データ(chunks)があればそれも消す予約
+                    if (data.type === 'composite') {
+                        const chunksSnapshot = await doc.ref.collection('chunks').get();
+                        chunksSnapshot.forEach(chunk => {
+                            batch.delete(chunk.ref);
+                        });
+                    }
+
+                    // 本体を消す予約
+                    batch.delete(doc.ref);
+                    count++;
+                }
+
+                // 一括削除実行
+                await batch.commit();
+                console.log(`${count}件の古いデータを削除しました。`);
+                
+            } catch (error) {
+                console.error("データ削除中にエラー:", error);
+            }
+        }
+        
     </script>
     
 </body>

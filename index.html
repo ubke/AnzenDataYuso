@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>Secure Memo Transfer</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
@@ -13,19 +13,23 @@
             --msg-bg-me: #8de055;
             --text-color: #333;
         }
+        
+        /* bodyの高さを100%にするための準備 */
+        html {
+            height: 100%;
+        }
+
+        /* 高さを 100dvh から 100% に変更 */
         body { 
             margin: 0; 
             font-family: sans-serif; 
             background-color: var(--chat-bg); 
             
-            /* 【重要変更】 100vh ではなく 100dvh にします */
-            /* これでアドレスバーが動いても入力欄が画面外に消えなくなります */
-            height: 100dvh; 
+            /* ここを修正！ */
+            height: 100%; 
             
             display: flex; 
             flex-direction: column; 
-            
-            /* 画面全体がスクロールしてしまうのを防ぐ */
             overflow: hidden; 
         }
         

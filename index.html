@@ -110,6 +110,9 @@
             color: var(--msg-text-color-me);
             border-bottom-right-radius: 4px; /* 右下を尖らせる */
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+
+            /* 改行コードを画面上の改行として表示する設定 */
+            white-space: pre-wrap;
         }
 
         /* 画像スタイル */
@@ -187,11 +190,17 @@
             flex: 1; 
             padding: 10px 15px; 
             border-radius: 20px; 
-            border: 1px solid #455a78;
+            border: 1px solid #455a78; 
             outline: none; 
-            font-size: 16px;
+            font-size: 16px; 
             background: #172a45; 
-            color: #ffffff; /* ★入力文字を白にする */
+            color: #ffffff;
+            font-family: sans-serif;
+            line-height: 1.5;
+            height: 50px;       /* 初期の高さを広げる */
+            resize: vertical;   /* 縦方向にだけ手動でサイズ変更OKにする */
+            min-height: 40px;   /* 縮めすぎ防止 */
+            max-height: 150px;  /* 広げすぎ防止（お好みで） */
         }
         #message-input::placeholder { color: rgba(230, 241, 255, 0.4); }
 
@@ -364,7 +373,7 @@
         </label>
         <input type="file" id="file-input" accept="image/*,video/*" multiple onchange="handleFileSelect(this)">
         
-        <input type="text" id="message-input" placeholder="メモを入力..." onkeypress="handleKeyPress(event)">
+        <textarea id="message-input" placeholder="テキストを入力..." rows="3"></textarea>
         
         <button id="send-btn" onclick="sendMessage()">
             <span class="material-icons" style="font-size: 30px;">send</span>
@@ -1131,11 +1140,6 @@
                 document.getElementById('auth-modal').style.display = 'flex';
             }
         });
-
-        // --- ユーティリティ ---
-        function handleKeyPress(e) {
-            if (e.key === 'Enter') sendMessage();
-        }
 
         // --- 画像ストック・送信ロジック（D&D対応版） ---
 

@@ -339,10 +339,10 @@
     <div id="auth-modal">
         <div class="modal-content">
             <h2>セキュリティ設定</h2>
-            <p>このパスワードが暗号化キーになります。<br>忘れるとデータは復元できません。</p>
-            <input type="email" id="email" placeholder="メールアドレス（ID代わり）">
+            <p><strong>3つの鍵</strong>を設定してください。<br>これらが一致した端末同士でのみ通信できます。</p>
+            <input type="text" id="user-id" placeholder="1. ユーザーID（部屋の名前）">
             <input type="password" id="password" placeholder="ログインパスワード">
-            <input type="password" id="encryption-key" placeholder="データ暗号化キー（必須）">
+            <input type="password" id="encryption-key" placeholder="データ暗号化キー">
             <button onclick="login()">ログイン / 新規登録して開始</button>
         </div>
     </div>
@@ -428,44 +428,51 @@
 
         // --- ログイン処理 ---
         function login() {
-            const email = document.getElementById('email').value;
-            const pass = document.getElementById('password').value;
+            // 【変更】IDを取得するように変更
+            const userId = document.getElementById('user-id').value.trim();
+            const password = document.getElementById('password').value;
             const key = document.getElementById('encryption-key').value;
 
-            if (!email || !pass || !key) {
-                alert("全ての項目を入力してください");
+            if (!userId || !password || !key) {
+                alert("セキュリティのため、3つ全ての項目を入力してください");
                 return;
             }
 
-            // 【追加】ここで鍵をブラウザに保存してしまう
+            // 暗号化キーを保存
             localStorage.setItem('savedKey', key); 
             secretKey = key; 
 
-            // まずログインを試みる
-            auth.signInWithEmailAndPassword(email, pass)
+            // 【重要】入力されたIDをメールアドレス形式に「偽装」する
+            // 例: ユーザーが "taro" と入力 → "taro@anzen.yuso" として扱う
+            const fakeEmail = userId + "@anzen.yuso";
+
+            auth.signInWithEmailAndPassword(fakeEmail, password)
                 .then((userCredential) => {
                     initApp(userCredential.user);
                 })
                 .catch((error) => {
-                    // エラー処理（前回と同じロジック）
                     const errorCode = error.code;
+
                     if (errorCode === 'auth/user-not-found' || 
                         errorCode === 'auth/invalid-login-credentials' || 
                         errorCode === 'auth/invalid-credential') {
                         
-                        auth.createUserWithEmailAndPassword(email, pass)
+                        // 新規登録も fakeEmail で行う
+                        auth.createUserWithEmailAndPassword(fakeEmail, password)
                             .then((userCredential) => {
                                 initApp(userCredential.user);
                             })
                             .catch((createError) => {
                                 if (createError.code === 'auth/email-already-in-use') {
-                                    alert("パスワードが間違っています。");
+                                    alert("【エラー】そのIDはすでに使われています。\n自分のIDならパスワードが違います。新規なら別のIDにしてください。");
                                 } else if (createError.code === 'auth/weak-password') {
                                     alert("パスワードは6文字以上にしてください。");
                                 } else {
                                     alert("登録エラー: " + createError.message);
                                 }
                             });
+                    } else if (errorCode === 'auth/wrong-password') {
+                        alert("パスワードが違います。");
                     } else {
                         alert("ログインエラー: " + error.message);
                     }

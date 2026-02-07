@@ -350,9 +350,23 @@
         <div class="modal-content">
             <h2>セキュリティ設定</h2>
             <p><strong>ユーザーID・ログインパスワード・データ暗号化キー</strong>を設定してください。<br>これらが一致した端末同士でのみ通信できます。</p>
-            <input type="text" id="user-id" placeholder="1. ユーザーID">
-            <input type="password" id="password" placeholder="ログインパスワード（6文字以上）">
-            <input type="password" id="encryption-key" placeholder="データ暗号化キー">
+            
+            <input type="text" id="user-id" placeholder="1. ユーザーID" autocomplete="off">
+            
+            <input type="password" id="password" placeholder="ログインパスワード（半角英数のみ6文字以上）"
+                style="ime-mode: disabled;" 
+                   autocomplete="new-password"
+                   autocorrect="off" 
+                   autocapitalize="off" 
+                   spellcheck="false">
+            
+            <input type="password" id="encryption-key" placeholder="データ暗号化キー（半角英数のみ）"
+                style="ime-mode: disabled;" 
+                   autocomplete="new-password"
+                   autocorrect="off" 
+                   autocapitalize="off" 
+                   spellcheck="false">
+            
             <button onclick="login()">ログイン / 新規登録して開始</button>
         </div>
     </div>

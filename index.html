@@ -7,6 +7,16 @@
     <link rel="icon" href="icon.png">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
+
+        /* --- アプリ全体のロック画面 --- */
+        #access-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #0a192f; /* 背景を真っ暗にして中身を見せない */
+            display: flex; /* 初期状態は表示(JSで制御) */
+            justify-content: center; align-items: center; 
+            z-index: 99999; /* どの要素よりも手前に出す */
+        }
+        
         /* === Secure Memo Transfer : Dark Blue Theme (Menu Light) === */
         
         :root {
@@ -343,6 +353,17 @@
     </style>
 </head>
 <body>
+    <div id="access-modal">
+        <div class="modal-content" style="border-color: #ff6b6b;">
+            <h2 style="color: #ff6b6b;">利用制限</h2>
+            <p>このアプリを使用するには<br>有料記事に記載されたパスワードが必要です。</p>
+            
+            <input type="password" id="app-access-pass" placeholder="アプリ利用パスワード" 
+                   onkeydown="if(event.key === 'Enter') verifyAppAccess()">
+            
+            <button onclick="verifyAppAccess()" style="background-color: #ff6b6b;">ロック解除</button>
+        </div>
+    </div>
 
     <div id="loading-screen">
         <div class="loader"></div>
@@ -417,6 +438,43 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     <script>
+        <script>
+        // --- 【新規追加】アプリ利用パスワードの設定 ---
+        
+        // ★ここにnoteの有料部分で教えるパスワードを設定してください
+        const APP_SECRET = "YASU55"; 
+        
+        // ページ読み込み時にチェック
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAppAccess();
+        });
+
+        function checkAppAccess() {
+            // ブラウザに「解除済みフラグ」があるか確認
+            const hasAccess = localStorage.getItem('appUnlocked');
+            
+            if (hasAccess === 'true') {
+                // 解除済みならロック画面を消す
+                document.getElementById('access-modal').style.display = 'none';
+            } else {
+                // まだならロック画面を表示したままにする
+                document.getElementById('access-modal').style.display = 'flex';
+            }
+        }
+
+        function verifyAppAccess() {
+            const input = document.getElementById('app-access-pass').value;
+            
+            if (input === APP_SECRET) {
+                // 正解ならフラグを保存してロック解除
+                localStorage.setItem('appUnlocked', 'true');
+                document.getElementById('access-modal').style.display = 'none';
+                alert("認証に成功しました。ようこそ！");
+            } else {
+                alert("パスワードが違います。noteをご確認ください。");
+            }
+        }
+        
         // 【重要】ここにFirebase設定を貼り付ける
         // Firebase Console -> Project Settings -> General -> Your apps -> Config
         const firebaseConfig = {

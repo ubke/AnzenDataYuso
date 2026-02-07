@@ -427,8 +427,8 @@
         }
 
         // --- ログイン処理 ---
+        // --- ログイン処理（ID早い者勝ち・完全ユニーク仕様） ---
         function login() {
-            // 【変更】IDを取得するように変更
             const userId = document.getElementById('user-id').value.trim();
             const password = document.getElementById('password').value;
             const key = document.getElementById('encryption-key').value;
@@ -438,43 +438,48 @@
                 return;
             }
 
-            // 暗号化キーを保存
             localStorage.setItem('savedKey', key); 
             secretKey = key; 
 
-            // 【重要】入力されたIDをメールアドレス形式に「偽装」する
-            // 例: ユーザーが "taro" と入力 → "taro@anzen.yuso" として扱う
+            // IDをメールアドレス形式に変換
             const fakeEmail = userId + "@anzen.yuso";
 
+            // 1. まず「ログイン」を試みる
             auth.signInWithEmailAndPassword(fakeEmail, password)
                 .then((userCredential) => {
+                    // 成功＝そのIDの持ち主本人
                     initApp(userCredential.user);
                 })
                 .catch((error) => {
                     const errorCode = error.code;
 
+                    // 2. 「ユーザーが見つからない」＝「まだ誰もそのIDを使っていない」
                     if (errorCode === 'auth/user-not-found' || 
                         errorCode === 'auth/invalid-login-credentials' || 
                         errorCode === 'auth/invalid-credential') {
                         
-                        // 新規登録も fakeEmail で行う
+                        // 誰も使っていないので、新規登録してあげる
                         auth.createUserWithEmailAndPassword(fakeEmail, password)
                             .then((userCredential) => {
+                                alert("新しいIDを作成しました！");
                                 initApp(userCredential.user);
                             })
                             .catch((createError) => {
+                                // 万が一の競合エラー
                                 if (createError.code === 'auth/email-already-in-use') {
-                                    alert("【エラー】そのIDはすでに使われています。\n自分のIDならパスワードが違います。新規なら別のIDにしてください。");
+                                    alert("【残念！】タッチの差で、そのIDは他の人に取られてしまいました。\n別のIDにしてください。");
                                 } else if (createError.code === 'auth/weak-password') {
                                     alert("パスワードは6文字以上にしてください。");
                                 } else {
                                     alert("登録エラー: " + createError.message);
                                 }
                             });
+
+                    // 3. 【重要】IDはあるけどパスワードが違う＝「既に誰かがそのIDを使っている」
                     } else if (errorCode === 'auth/wrong-password') {
-                        alert("パスワードが違います。");
+                        alert("【使用不可】そのID（" + userId + "）は既に他の人が使っています。\n\n・ご自身のIDの場合：パスワードが間違っています。\n・新規登録の場合：そのIDは使えないので、別のIDに変えてください。");
                     } else {
-                        alert("ログインエラー: " + error.message);
+                        alert("エラー: " + error.message);
                     }
                 });
         }

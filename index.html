@@ -1208,6 +1208,39 @@
             }
         });
 
+        // --- ペースト（Ctrl+V）での画像貼り付け機能 ---
+        document.getElementById('message-input').addEventListener('paste', (e) => {
+            // クリップボードのデータを取得
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            let files = [];
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                // 画像ファイルが含まれているかチェック
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    // ファイル名がない場合（スクショなど）は適当な名前をつける
+                    if (!file.name || file.name === 'image.png') {
+                        // タイムスタンプを使ってユニークな名前にする（重複除外に引っかからないように）
+                        const newFile = new File([file], `paste_${Date.now()}.png`, { type: file.type });
+                        files.push(newFile);
+                    } else {
+                        files.push(file);
+                    }
+                }
+            }
+
+            // 画像が見つかった場合
+            if (files.length > 0) {
+                // 送信ストックに追加（既存の関数を再利用）
+                addFilesToStock(files);
+                
+                // 画像が貼られた場合は、テキストエリアへの標準ペースト動作（無効な入力）をキャンセル
+                e.preventDefault(); 
+            }
+            // 画像がない（テキストだけの）場合は、そのままテキストがペーストされます
+        });
+
         // --- 共通：ファイルをストックに追加してプレビュー更新 ---
         function addFilesToStock(files) {
             // 1. 画像か動画だけをフィルタリング

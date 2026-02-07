@@ -341,7 +341,7 @@
             <h2>セキュリティ設定</h2>
             <p><strong>ユーザーID・ログインパスワード・データ暗号化キー</strong>を設定してください。<br>これらが一致した端末同士でのみ通信できます。</p>
             <input type="text" id="user-id" placeholder="1. ユーザーID">
-            <input type="password" id="password" placeholder="ログインパスワード">
+            <input type="password" id="password" placeholder="ログインパスワード（6文字以上）">
             <input type="password" id="encryption-key" placeholder="データ暗号化キー">
             <button onclick="login()">ログイン / 新規登録して開始</button>
         </div>
@@ -467,7 +467,7 @@
                             .catch((createError) => {
                                 // 万が一の競合エラー
                                 if (createError.code === 'auth/email-already-in-use') {
-                                    alert("【残念！】タッチの差で、そのIDは他の人に取られてしまいました。\n別のIDにしてください。");
+                                    alert("【残念！】既に使用されてるIDです。\n別のIDにしてください。");
                                 } else if (createError.code === 'auth/weak-password') {
                                     alert("パスワードは6文字以上にしてください。");
                                 } else {
@@ -1141,6 +1141,8 @@
 
         // 送信待ちのファイルを溜めておく配列
         let stockedFiles = [];
+        // 送信中かどうかを管理するフラグ
+        let isSending = false;
 
         // 1. ファイル選択（ボタンから）
         function handleFileSelect(input) {
@@ -1181,13 +1183,26 @@
 
         // --- 共通：ファイルをストックに追加してプレビュー更新 ---
         function addFilesToStock(files) {
-            // 画像か動画だけをフィルタリング
+            // 1. 画像か動画だけをフィルタリング
             const validFiles = files.filter(file => file.type.startsWith('image/') || file.type.startsWith('video/'));
             
             if (validFiles.length === 0) return;
 
+            // 重複チェック：すでにストックにあるファイルは除外する
+            const newFiles = validFiles.filter(newFile => {
+                // 同じ名前、同じサイズ、同じ更新日時のファイルがすでにあるかチェック
+                const isDuplicate = stockedFiles.some(stockedFile => 
+                    stockedFile.name === newFile.name &&
+                    stockedFile.size === newFile.size &&
+                    stockedFile.lastModified === newFile.lastModified
+                );
+                return !isDuplicate; // 重複していなければ採用
+            });
+
+            if (newFiles.length === 0) return; // 全て重複していたら何もしない
+
             // 配列に追加
-            stockedFiles = stockedFiles.concat(validFiles);
+            stockedFiles = stockedFiles.concat(newFiles);
             updatePreview();
         }
 
@@ -1227,110 +1242,106 @@
         }
 
         // --- 送信処理（巨大ファイル対応・分割バッチ版） ---
-        async function sendMessage() {
-            const input = document.getElementById('message-input');
-            const text = input.value;
-            
-            // テキストも画像もなければ何もしない
-            if (!text && stockedFiles.length === 0) return;
+        async function sendMessage(textInput = null, imagesInput = null) {
+            // 送信中なら何もしない（連打防止の最強の盾）
+            if (isSending) return;
 
+            const input = document.getElementById('message-input');
+            const text = textInput !== null ? textInput : input.value;
+            
+            // 引数で渡された画像があれば配列化
+            let argImages = [];
+            if (imagesInput) {
+                argImages = Array.isArray(imagesInput) ? imagesInput : [imagesInput];
+            }
+            
+            // テキストも、ストック画像も、引数画像もなければ何もしない
+            if (!text && stockedFiles.length === 0 && argImages.length === 0) return;
+
+            // 送信開始フラグを立てる
+            isSending = true;
+            
             const sendBtn = document.getElementById('send-btn');
             sendBtn.disabled = true;
             sendBtn.style.opacity = "0.5";
 
             try {
-                // 1. ストックされている画像をデータURLに一括変換
+                // 1. 全ての画像（ストック＋引数）をまとめる
+                const allFilesToProcess = stockedFiles.concat(argImages);
                 let imagesData = [];
-                if (stockedFiles.length > 0) {
-                    const readPromises = stockedFiles.map(file => {
+
+                // 2. まとめた画像をデータURLに一括変換
+                if (allFilesToProcess.length > 0) {
+                    const readPromises = allFilesToProcess.map(file => {
                         return new Promise((resolve, reject) => {
                             const reader = new FileReader();
                             reader.onload = (e) => resolve(e.target.result);
-                            reader.onerror = (e) => reject(e);
+                            reader.onerror = (e) => reject(new Error("ファイルの読み込みに失敗しました"));
                             reader.readAsDataURL(file);
                         });
                     });
                     imagesData = await Promise.all(readPromises);
                 }
 
-                // 2. ペイロード作成
+                // 3. ペイロード作成
                 const payload = {
                     text: text,
-                    images: imagesData, // 動画もここに含まれます
+                    images: imagesData, // 全ての画像データが入る
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
-                // 3. 暗号化
-                // ※動画が長すぎるとここ（JSON.stringify）でメモリ不足になる可能性がありますが、
-                // まずは送信ロジックの改善で対応します。
+                // 4. 暗号化と保存（ここは以前と同じ）
                 const encryptedContent = encryptData(JSON.stringify(payload));
-                
-                // バッチサイズ（約800KBに設定して安全マージンを取る）
                 const BATCH_SIZE = 800000; 
                 const totalLength = encryptedContent.length;
-                
                 const docRef = db.collection('users').doc(currentUser.uid).collection('memos').doc();
 
-                // --- 分岐：サイズが小さい場合 ---
                 if (totalLength <= BATCH_SIZE) {
                     await docRef.set({
                         content: encryptedContent,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                         type: 'simple'
                     });
-
-                // --- 分岐：サイズが大きい場合（動画など） ---
                 } else {
-                    // 文字列をチャンク（断片）に分割
                     const chunks = [];
                     for (let i = 0; i < totalLength; i += BATCH_SIZE) {
                         chunks.push(encryptedContent.substring(i, i + BATCH_SIZE));
                     }
-
-                    // 【重要】Firestoreの「1バッチ500書き込み制限」を回避するため、
-                    // チャンクを400個ずつのグループに分けて、順番に保存していく
                     const WRITE_BATCH_LIMIT = 400;
-                    
                     for (let i = 0; i < chunks.length; i += WRITE_BATCH_LIMIT) {
                         const batch = db.batch();
                         const currentBatchChunks = chunks.slice(i, i + WRITE_BATCH_LIMIT);
-                        
                         currentBatchChunks.forEach((chunkData, index) => {
-                            // 全体の中での通し番号（000, 001, 002...）
                             const globalIndex = i + index;
                             const chunkRef = docRef.collection('chunks').doc(globalIndex.toString().padStart(3, '0'));
                             batch.set(chunkRef, { data: chunkData });
                         });
-
-                        // 400個書き込むごとに送信実行
                         await batch.commit();
                     }
-
-                    // 最後に本体（目次データ）を書き込む
-                    // ※これを最後にすることで、読み込み側が「まだデータがないのに読み込もうとする」のを防げます
                     await docRef.set({
                         type: 'composite',
-                        count: chunks.length, // 分割数
+                        count: chunks.length,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                 }
 
-                // 4. 送信完了後のリセット
+                // 5. 送信完了後のリセット
                 input.value = "";
                 stockedFiles = []; 
                 updatePreview();   
 
             } catch (e) {
                 console.error(e);
-                // エラー内容をアラートで見やすく表示
                 if (e.message.includes("Invalid string length") || e.message.includes("Invalid array length")) {
                     alert("動画サイズが大きすぎてブラウザで処理できませんでした。\nもう少し短い動画か、画質を下げた動画を試してください。");
                 } else {
                     alert("送信エラー: " + e.message);
                 }
             } finally {
+                // 必ずフラグを下ろしてボタンを復活させる
                 sendBtn.disabled = false;
                 sendBtn.style.opacity = "1";
+                isSending = false;
             }
         }
 

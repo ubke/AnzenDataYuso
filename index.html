@@ -514,8 +514,7 @@
             }
         }
 
-        // --- ログイン処理 ---
-        // --- ログイン処理（ID早い者勝ち・完全ユニーク仕様） ---
+        // --- ログイン処理（自分専用モード：新規登録禁止） ---
         function login() {
             const userId = document.getElementById('user-id').value.trim();
             const password = document.getElementById('password').value;
@@ -532,43 +531,19 @@
             // IDをメールアドレス形式に変換
             const fakeEmail = userId + "@anzen.yuso";
 
-            // 1. まず「ログイン」を試みる
+            // ★【変更点】ログインだけを試みる（新規登録のコードを削除）
             auth.signInWithEmailAndPassword(fakeEmail, password)
                 .then((userCredential) => {
-                    // 成功＝そのIDの持ち主本人
+                    // 成功＝本人確認OK
                     initApp(userCredential.user);
+                    
+                    // ログイン成功ログ（任意）
+                    gtag('event', 'login', { method: 'AnzenApp' });
                 })
                 .catch((error) => {
-                    const errorCode = error.code;
-
-                    // 2. 「ユーザーが見つからない」＝「まだ誰もそのIDを使っていない」
-                    if (errorCode === 'auth/user-not-found' || 
-                        errorCode === 'auth/invalid-login-credentials' || 
-                        errorCode === 'auth/invalid-credential') {
-                        
-                        // 誰も使っていないので、新規登録してあげる
-                        auth.createUserWithEmailAndPassword(fakeEmail, password)
-                            .then((userCredential) => {
-                                alert("新しいIDを作成しました！");
-                                initApp(userCredential.user);
-                            })
-                            .catch((createError) => {
-                                // 万が一の競合エラー
-                                if (createError.code === 'auth/email-already-in-use') {
-                                    alert("【残念！】既に使用されてるIDです。\n別のIDにしてください。");
-                                } else if (createError.code === 'auth/weak-password') {
-                                    alert("パスワードは6文字以上にしてください。");
-                                } else {
-                                    alert("登録エラー: " + createError.message);
-                                }
-                            });
-
-                    // 3. 【重要】IDはあるけどパスワードが違う＝「既に誰かがそのIDを使っている」
-                    } else if (errorCode === 'auth/wrong-password') {
-                        alert("【使用不可】そのID（" + userId + "）は既に他の人が使っています。\n\n・ご自身のIDの場合：パスワードが間違っています。\n・新規登録の場合：そのIDは使えないので、別のIDに変えてください。");
-                    } else {
-                        alert("エラー: " + error.message);
-                    }
+                    // 失敗した場合は、全てエラーとして弾く
+                    console.error("Login failed:", error);
+                    alert("【ログイン失敗】\nIDかパスワードが間違っています。\n※このアプリは現在、新規登録を受け付けていません。");
                 });
         }
 
